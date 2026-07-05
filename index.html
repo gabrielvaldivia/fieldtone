@@ -24,16 +24,46 @@
     color: var(--ink);
     font-family: 'Space Grotesk', sans-serif;
     display: flex; flex-direction: column; align-items: center;
-    padding: max(36px, env(safe-area-inset-top)) 20px 56px;
+    min-height: 100dvh;
+    padding: max(30px, env(safe-area-inset-top)) 20px max(22px, env(safe-area-inset-bottom));
     -webkit-tap-highlight-color: transparent;
   }
   .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.14em; text-transform: uppercase; }
-  header { text-align: center; }
-  #coords { font-size: 10px; letter-spacing: 0.22em; color: var(--faint); margin-bottom: 8px; min-height: 13px; }
-  h1 { font-weight: 300; font-size: 30px; letter-spacing: 0.04em; margin: 0; transition: opacity 1.5s; }
-  h1.fading { opacity: 0.3; }
-  #meta { font-size: 10px; color: var(--faint); margin-top: 8px; min-height: 13px; }
-  #circle { position: relative; width: 230px; height: 230px; margin: 34px 0 8px; background: transparent; border: none; cursor: pointer; }
+  /* top — the location name IS the search field, with a locate button at its right */
+  .top { position: relative; width: min(560px, 100%); }
+  .searchbar { position: relative; display: flex; align-items: center; border-bottom: 1px solid transparent; transition: border-color 0.4s; }
+  .searchbar:focus-within { border-bottom-color: var(--line); }
+  #q {
+    width: 100%; background: transparent; border: none;
+    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-weight: 300;
+    font-size: clamp(23px, 7vw, 34px); letter-spacing: 0.02em; text-align: center;
+    padding: 6px 46px; transition: opacity 1.2s;
+  }
+  #q:focus-visible { outline: none; }
+  #q.fading { opacity: 0.3; }
+  #q::placeholder { color: var(--ink); opacity: 0.32; font-weight: 300; }
+  #locate {
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+    background: transparent; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--ink); font-size: 15px; cursor: pointer;
+  }
+  #results {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 5; margin-top: 8px;
+    background: var(--top); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    text-align: left; display: none;
+  }
+  #results.open { display: block; }
+  #results button {
+    display: block; width: 100%; text-align: left; background: transparent; border: none;
+    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 15px; padding: 12px 14px; cursor: pointer;
+  }
+  #results button:hover, #results button:focus-visible { background: rgba(236,238,250,0.06); }
+  #results button .sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-left: 10px; }
+
+  /* middle — the visual, centred in the open space */
+  .stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  #circle { position: relative; width: min(230px, 62vw); height: min(230px, 62vw); margin: 0 0 12px; background: transparent; border: none; cursor: pointer; }
   #circle .ring {
     position: absolute; border-radius: 50%; border: 1px solid var(--line);
     opacity: 0.5; transition: opacity 1s;
@@ -45,30 +75,13 @@
   }
   body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
   #hint { font-size: 9px; color: var(--faint); }
-  #weather { font-size: 9px; color: var(--faint); margin-top: 10px; min-height: 12px; }
-  .searchrow { width: min(340px, 100%); margin-top: 30px; position: relative; }
-  .searchbar { display: flex; gap: 10px; align-items: center; }
-  #q {
-    flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--line);
-    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 16px; padding: 8px 2px;
-  }
-  #q::placeholder { color: var(--ink); opacity: 0.4; }
-  #locate {
-    background: transparent; border: 1px solid var(--line); border-radius: 999px; color: var(--ink);
-    font-size: 9px; padding: 8px 13px; cursor: pointer; white-space: nowrap;
-  }
-  #results {
-    position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
-    background: var(--top); border: 1px solid var(--line); border-radius: 4px; margin-top: 4px;
-    display: none;
-  }
-  #results.open { display: block; }
-  #results button {
-    display: block; width: 100%; text-align: left; background: transparent; border: none;
-    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 15px; padding: 11px 12px; cursor: pointer;
-  }
-  #results button .sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-left: 10px; }
-  #msg { font-size: 9px; color: var(--faint); margin-top: 14px; text-align: center; min-height: 12px; }
+  #meta { font-size: 10px; color: var(--faint); margin-top: 6px; min-height: 13px; text-align: center; }
+
+  /* bottom — coordinates · time · weather */
+  .foot { margin-top: auto; padding-top: 30px; display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; }
+  #coords { font-size: 9px; letter-spacing: 0.2em; color: var(--faint); min-height: 12px; }
+  #weather { font-size: 9px; letter-spacing: 0.14em; color: var(--faint); min-height: 12px; }
+  #msg { font-size: 9px; color: var(--faint); min-height: 12px; margin-top: 2px; }
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
   @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
   @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
@@ -76,27 +89,28 @@
 </style>
 </head>
 <body>
-  <header>
-    <div id="coords" class="mono"></div>
-    <h1 id="title">Somewhere</h1>
-    <div id="meta" class="mono"></div>
-  </header>
-
-  <button id="circle" aria-label="Begin sound">
-    <span id="rings"></span>
-    <span id="dot"></span>
-  </button>
-  <div id="hint" class="mono">tap to listen</div>
-  <div id="weather" class="mono"></div>
-
-  <div class="searchrow">
+  <header class="top">
     <div class="searchbar">
-      <input id="q" placeholder="go anywhere on earth…" aria-label="Search for a place" autocomplete="off">
-      <button id="locate" class="mono" aria-label="Use my location">◎ locate me</button>
+      <input id="q" autocomplete="off" spellcheck="false" placeholder="search any place…" aria-label="Current location — type to search any place on Earth">
+      <button id="locate" aria-label="Use my location">◎</button>
     </div>
     <div id="results" role="listbox"></div>
-  </div>
-  <div id="msg" class="mono"></div>
+  </header>
+
+  <main class="stage">
+    <button id="circle" aria-label="Play or stop the sound">
+      <span id="rings"></span>
+      <span id="dot"></span>
+    </button>
+    <div id="hint" class="mono">tap to listen</div>
+    <div id="meta" class="mono"></div>
+  </main>
+
+  <footer class="foot">
+    <div id="coords" class="mono"></div>
+    <div id="weather" class="mono"></div>
+    <div id="msg" class="mono"></div>
+  </footer>
 
 <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
 <script>
@@ -782,18 +796,26 @@ async function reverseTitle() {
     const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
     const j = await r.json();
     const t = j.city || j.locality || j.principalSubdivision || j.countryName;
-    if (t) { state.title = t; $("title").textContent = t; }
+    if (t) setLocationName(t);
   } catch (e) {}
 }
 
 /* ================================================================== */
 /* Rendering                                                           */
 /* ================================================================== */
+/* The location name lives in the search field. Only overwrite it while the
+   user isn't typing, so a search-in-progress is never clobbered. */
+function setLocationName(name) {
+  state.title = name;
+  const q = $("q");
+  if (document.activeElement !== q) q.value = name;
+}
+
 function renderCharacter() {
   const c = state.char;
   const label = c.rhythm === 0 ? "pure drone" : c.rhythm < 0.55 ? "faint pulse" : "steady groove";
   $("meta").textContent = `${c.palette.mood} · ${c.scale.name} · ${label}` + (c.rhythm > 0 ? ` · ${c.tempo} bpm` : "");
-  $("title").textContent = state.title;
+  setLocationName(state.title);
   const rings = $("rings");
   rings.innerHTML = "";
   for (let i = 0; i < c.voices; i++) {
@@ -813,12 +835,13 @@ function renderCharacter() {
 function travel(pos, title) {
   state.center = pos;
   state.tzOffsetSec = null; // re-estimate until weather returns the real offset
-  if (title) { state.title = title; } else { state.title = pos.lat.toFixed(3) + "°, " + pos.lng.toFixed(3) + "°"; reverseTitle(); }
+  if (title) { setLocationName(title); } else { setLocationName(pos.lat.toFixed(3) + "°, " + pos.lng.toFixed(3) + "°"); reverseTitle(); }
   const nc = makeCharacter(pos.lat, pos.lng);
   const changed = nc.key !== state.char.key;
   state.char = nc;
-  $("title").classList.add("fading");
-  setTimeout(() => $("title").classList.remove("fading"), 1200);
+  const q = $("q");
+  q.classList.add("fading");
+  setTimeout(() => q.classList.remove("fading"), 1200);
   renderCharacter();
   applyConditions();
   fetchWeather();
@@ -911,8 +934,8 @@ $("q").addEventListener("input", (e) => {
         const sub = [res.admin1, res.country].filter(Boolean).join(", ");
         b.innerHTML = res.name + '<span class="sub">' + sub + "</span>";
         b.addEventListener("click", () => {
-          $("q").value = "";
           box.classList.remove("open");
+          $("q").blur();
           travel({ lat: res.latitude, lng: res.longitude }, res.name);
         });
         box.appendChild(b);
@@ -921,8 +944,16 @@ $("q").addEventListener("input", (e) => {
     } catch (err) {}
   }, 300);
 });
+// the field doubles as the location title: select on focus, restore on blur
+$("q").addEventListener("focus", () => $("q").select());
+$("q").addEventListener("blur", () => { $("results").classList.remove("open"); $("q").value = state.title; });
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { $("q").value = state.title; $("results").classList.remove("open"); $("q").blur(); }
+});
+// clicking a result must not blur-then-close before the click lands
+$("results").addEventListener("mousedown", (e) => e.preventDefault());
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".searchrow")) $("results").classList.remove("open");
+  if (!e.target.closest(".top")) $("results").classList.remove("open");
 });
 
 /* ================================================================== */
