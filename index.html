@@ -312,7 +312,7 @@ function makeCharacter(lat, lng) {
   const tempo = Math.round(rangePick(rng, archetype.tempo));
   const beat = archetype.beat;                               // beat presence/level from the archetype
   const rhythm = beat;                                       // drives the grooving dot in the UI
-  const voices = 2 + Math.floor(rng() * 6);                  // 2–7
+  const voices = 2 + Math.floor(rng() * 5);                  // 2–6
   const lofi = rangePick(rng, archetype.lofi);               // grit / dust amount
   const crackle = Math.min(1, archetype.crackle * (0.5 + rng()));
   const droneLevel = archetype.drone;                        // how loud the ambient bed sits
@@ -345,7 +345,7 @@ function makeCharacter(lat, lng) {
 
   // structure & motion — this is what makes forms differ, not just timbres
   const motion = [0.35, 0.55, 0.8, 1, 1.4, 2.0, 2.8][Math.floor(rng() * 7)]; // glacial ↔ lively
-  const activity = 0.2 + rng() * rng() * 1.3;                // sparse ↔ dense note triggering
+  const activity = 0.15 + rng() * rng() * 0.9;               // sparse ↔ dense (kept calm — it's a background wash)
   const regSpread = 1 + Math.floor(rng() * 4);               // octave span across voices
   const octBase = [-2, -1, 0, 0, 1][Math.floor(rng() * 5)];  // register centre
 
@@ -414,7 +414,7 @@ function makeDetails(char) {
   const voices = [];
   for (let i = 0; i < char.voices; i++) {
     voices.push({
-      interval: Math.max(1.5, Math.min(42, (4 + rng() * 12) / char.motion)),
+      interval: Math.max(3, Math.min(46, (6 + rng() * 14) / char.motion)),
       octave: char.octBase + Math.floor(rng() * (char.regSpread + 1)),
       degrees: [0, 0, 0, 0].map(() => Math.floor(rng() * char.scale.ints.length)),
       attack: (2.2 + rng() * 3.2) * char.palette.atk,
@@ -551,7 +551,7 @@ function buildEngine(char, det) {
   if (color) color.connect(busTail);
   const voiceDest = color || busTail;
 
-  const trigProb = () => Math.max(0.08, Math.min(0.98, 0.16 + char.activity * 0.5 + params.density * 0.3));
+  const trigProb = () => Math.max(0.05, Math.min(0.6, 0.08 + char.activity * 0.4 + params.density * 0.22));
 
   det.voices.forEach((v) => {
     const play = makeVoice(char, v, voiceDest, track);
