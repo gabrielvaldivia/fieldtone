@@ -272,19 +272,41 @@ function genScale(rng) {
   return { ints: Array.from(set).sort((a, b) => a - b) };
 }
 
-/* The melody motif: a rhythmic/contour cell walked over the chord tones.
-   Regenerated on evolution so the tune changes while staying in key. */
-function genCell(seventh, chordSteps, melodyRest, rng) {
-  const ladderN = (seventh ? 4 : 3) * 2;
-  const cell = [];
-  let cur = 0;
-  for (let s = 0; s < chordSteps; s++) {
-    cur = Math.max(0, Math.min(ladderN - 1, cur + (Math.floor(rng() * 5) - 2)));
+/* The melody as a STORY: a core theme developed across several phrases with a
+   rising-then-resolving arc. Each phrase spans one full chord progression; the
+   theme is transposed up toward a climax (mid-arc) then brought home. Returns
+   { phrases: step-arrays, arcLen, phraseSteps }. Notes index a 3-octave ladder
+   of the current chord's tones, so everything stays in key. */
+function genMelodyArc(seventh, chordSteps, progLen, melodyRest, rng) {
+  const base = seventh ? 4 : 3;                       // chord tones per octave
+  const CS = chordSteps;
+  const phraseSteps = progLen * CS;
+  const arcLen = 6 + Math.floor(rng() * 5);           // 6–10 phrases → a long, moving line
+  // core motif: contour + rhythm, one chord long, recurring (developed) across phrases
+  const theme = [];
+  let cur = Math.floor(base / 2);
+  for (let s = 0; s < CS; s++) {
+    cur = Math.max(0, Math.min(base - 1, cur + (Math.floor(rng() * 3) - 1)));   // stepwise, within one octave
     const dr = rng(); const dur = dr < 0.4 ? 1 : dr < 0.75 ? 2 : dr < 0.92 ? 3 : 4;
-    cell.push({ play: rng() > melodyRest, step: cur, oct: rng() < 0.12 ? 1 : 0, dur });
+    theme.push({ step: cur, dur, weight: rng() });
   }
-  cell[0].play = true; cell[0].step = 0;             // land on the chord root each bar
-  return cell;
+  const phrases = [];
+  for (let p = 0; p < arcLen; p++) {
+    const arc = arcLen > 1 ? Math.sin(Math.PI * p / (arcLen - 1)) : 1;  // 0 → 1 → 0, climax mid-arc
+    const lift = Math.round(arc * base);              // register climbs ~an octave toward the climax
+    const restCut = arc * 0.3;                         // busier toward the climax
+    const phrase = [];
+    for (let s = 0; s < phraseSteps; s++) {
+      const th = theme[s % CS];
+      const onBeat = (s % CS) === 0;                   // land on each chord change
+      const play = onBeat || th.weight > (melodyRest - restCut);
+      const step = Math.max(0, Math.min(base * 2 - 1, th.step + lift));
+      phrase.push({ play, step, dur: th.dur });
+    }
+    phrases.push(phrase);
+  }
+  phrases[arcLen - 1][0] = { play: true, step: 0, dur: 2 };   // resolve home at the end
+  return { phrases, arcLen, phraseSteps };
 }
 
 /* A 16-step kit pattern (kick / snare / hat), with per-place variation. */
@@ -389,8 +411,8 @@ function makeCharacter(lat, lng) {
   const leadOct = 1 + Math.floor(rng() * 2);                 // melody register above the root
   const padOct = 0;
   const leadWave = ["triangle", "sine", "square", "sawtooth", "fmsine", "pwm"][Math.floor(rng() * 6)];
-  const melodyRest = 0.55 + rng() * 0.32;                    // sparse: only 13–45% of steps sound
-  const cell = genCell(seventh, chordSteps, melodyRest, rng);
+  const melodyRest = 0.55 + rng() * 0.32;                    // sparse baseline; the arc adds notes at its climax
+  const melodyArc = genMelodyArc(seventh, chordSteps, progression.length, melodyRest, rng);
 
   // lead sits INSIDE the atmosphere — mostly wet, its own delay + reverb send,
   // amounts unique to the place (and modulated by time of day at play)
@@ -417,7 +439,7 @@ function makeCharacter(lat, lng) {
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
-    seventh, progression, chordSteps, leadOct, padOct, leadWave, cell, melodyRest,
+    seventh, progression, chordSteps, leadOct, padOct, leadWave, melodyArc, melodyRest,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     bassHits, bassStyle, bassVerb,
     kit, drums, kickNote, air, airHz, swing };
@@ -466,7 +488,16 @@ const PALETTE_BY_ID = Object.fromEntries(PALETTES.map((p) => [p.id, p]));
 const LEAD_TYPES  = ["auto", "sine", "triangle", "square", "sawtooth", "fmsine", "fmtriangle", "fmsquare", "amsine", "pwm", "pulse", "fatsawtooth"];
 const PAD_TYPES   = ["auto", "triangle", "sine", "sawtooth", "square", "fatsine", "fattriangle", "fatsawtooth", "amsine", "pwm"];
 const BASS_TYPES  = ["auto", "sine", "triangle", "sawtooth", "square", "pulse", "fmsquare"];
-const KIT_TYPES   = ["auto", "boombap", "four", "dub", "brush", "none"];
+const KIT_TYPES   = ["auto", "808", "acoustic", "vinyl", "tape", "clean", "trap", "none"];
+// drum SOUND presets (the beat dropdown swaps timbre; the pattern stays with the place)
+const DRUM_KITS = {
+  "808":    { kick: 30, kDecay: 0.62, kPd: 0.05,  kOct: 6, snare: "white", sDecay: 0.13, sOff: 19, hat: "white", hHi: 9000,  lofi: 0.10 },
+  acoustic: { kick: 37, kDecay: 0.30, kPd: 0.018, kOct: 3, snare: "white", sDecay: 0.16, sOff: 22, hat: "white", hHi: 8000,  lofi: 0.15 },
+  vinyl:    { kick: 34, kDecay: 0.27, kPd: 0.03,  kOct: 4, snare: "pink",  sDecay: 0.11, sOff: 19, hat: "pink",  hHi: 4800,  lofi: 0.90 },
+  tape:     { kick: 35, kDecay: 0.30, kPd: 0.025, kOct: 4, snare: "pink",  sDecay: 0.13, sOff: 20, hat: "pink",  hHi: 6000,  lofi: 0.60 },
+  clean:    { kick: 36, kDecay: 0.30, kPd: 0.02,  kOct: 4, snare: "white", sDecay: 0.13, sOff: 21, hat: "white", hHi: 10500, lofi: 0.05 },
+  trap:     { kick: 31, kDecay: 0.78, kPd: 0.06,  kOct: 6, snare: "white", sDecay: 0.10, sOff: 24, hat: "white", hHi: 11000, lofi: 0.10 },
+};
 const DRONE_TYPES = ["auto", ...PALETTES.map((p) => p.id)];
 const REVERB_TYPES = ["auto", "room", "hall", "cathedral", "plate", "off"];
 const DELAY_TYPES  = ["auto", "off", "slap", "eighth", "dotted", "tape", "long"];
@@ -482,10 +513,13 @@ function applyPicks(char) {
   if (picks.melody !== "auto") c.leadWave = picks.melody;
   if (picks.chords !== "auto") c.padType = picks.chords;
   if (picks.bass !== "auto") c.bassWave = picks.bass;
-  if (picks.beat !== "auto") {
-    c.kit = picks.beat;
-    c.beat = picks.beat === "none" ? 0 : (char.beat > 0 ? char.beat : 0.9);
-    if (picks.beat !== "none") c.drums = genDrums(picks.beat, mulberry32(hashStr(char.key + picks.beat)));
+  if (picks.beat === "none") {
+    c.beat = 0;                                        // mute the drums
+  } else if (picks.beat !== "auto") {
+    c.drumKit = picks.beat;                            // swap the drum SOUND, keep the location's pattern
+    if (!(char.beat > 0)) {                            // ...but if this place had no beat, give it one so the kit is heard
+      c.beat = 0.9; c.kit = "boombap"; c.drums = genDrums("boombap", mulberry32(hashStr(char.key)));
+    }
   }
   if (picks.drone !== "auto" && PALETTE_BY_ID[picks.drone]) c.palette = PALETTE_BY_ID[picks.drone];
   if (picks.reverb !== "auto") { const P = { room: [1.2, 0.4], hall: [4, 0.5], cathedral: [10, 0.6], plate: [2.6, 0.5], off: [1, 0] }[picks.reverb]; if (P) { c.reverbDecay = P[0]; c.reverbWet = P[1]; } }
@@ -578,7 +612,7 @@ function buildEngine(char, det) {
   // mixer taps — the sliders adjust these live (null when a part is absent)
   let leadGainNode = null, padGainNode = null, bassGainNode = null, drumOutNode = null, drumBase = 0, leadDelayNode = null;
   // live, mutable arrangement — evolve() swaps these so the piece moves over time
-  let songCell = char.cell, songProg = char.progression, songDrums = char.drums;
+  let songArc = char.melodyArc, songProg = char.progression, songDrums = char.drums;
 
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
   // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
@@ -656,15 +690,24 @@ function buildEngine(char, det) {
     }).connect(leadGain));
 
     const CS = char.chordSteps;
-    let ladder = null, m = 0, hold = 0;
+    let ladder = null, m = 0, hold = 0, arcSeed = 0;
     const song = new Tone.Loop((time) => {
-      const pos = m % CS;
-      if (pos === 0) {                         // new chord
-        const di = songProg[Math.floor(m / CS) % songProg.length];
+      const PS = songArc.phraseSteps;
+      const posInPhrase = m % PS;
+      const posInChord = posInPhrase % CS;
+      const globalPhrase = Math.floor(m / PS);
+      // when the whole arc has played out, generate the next chapter of the story
+      if (posInPhrase === 0 && globalPhrase > 0 && globalPhrase % songArc.arcLen === 0) {
+        arcSeed++;
+        songArc = genMelodyArc(char.seventh, CS, songProg.length, char.melodyRest, mulberry32(hashStr(char.key + "|arc" + arcSeed)));
+      }
+      const pIdx = globalPhrase % songArc.arcLen;
+      if (posInChord === 0) {                  // new chord
+        const di = songProg[Math.floor(posInPhrase / CS) % songProg.length];
         const tones = triad(char.scale, di, char.seventh);
         chord.offset = tones[0];               // drones + bass follow the changes
         harmony.tones = tones;
-        ladder = tones.concat(tones.map((t) => t + 12)).sort((a, b) => a - b);
+        ladder = tones.concat(tones.map((t) => t + 12)).sort((a, b) => a - b);   // 2-octave chord-tone ladder
         const freqs = tones.map((t) => {
           let pm = char.root + t + 12 * char.padOct;
           while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
@@ -672,12 +715,12 @@ function buildEngine(char, det) {
         });
         pad.triggerAttackRelease(freqs, eighth() * CS * 1.02, time);
       }
-      const cs = songCell[pos % songCell.length];
-      if (hold > 0) { hold--; m++; return; }   // let long notes ring — keeps the tune sparse
-      if (cs.play && ladder) {
+      const cs = songArc.phrases[pIdx][posInPhrase];
+      if (hold > 0) { hold--; m++; return; }   // let long notes ring
+      if (cs && cs.play && ladder) {
         const t = ladder[Math.max(0, Math.min(ladder.length - 1, cs.step))];
-        let midi = char.root + t + 12 * (char.leadOct + cs.oct);
-        while (midi > 96) midi -= 12; while (midi < 48) midi += 12;  // fold, never retune
+        let midi = char.root + t + 12 * char.leadOct;
+        while (midi > 84) midi -= 12; while (midi < 52) midi += 12;   // keep the lead in a musical range
         lead.triggerAttackRelease(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.95, time);
         hold = cs.dur - 1;
       }
@@ -763,39 +806,52 @@ function buildEngine(char, det) {
     /* Lo-fi drum bus: punchy and DRY, run through a bit-crusher and a high
        roll-off so it sounds like dusty sampled drums. Lo-fi amount decides how
        crushed and dark. A small dedicated reverb keeps beats defined. */
+    // resolve the drum SOUND: a chosen kit preset, else the place's lo-fi-derived default
+    const DK = DRUM_KITS[char.drumKit];
+    const lofiAmt = DK ? DK.lofi : char.lofi;
+    const kickNote = DK ? DK.kick : char.kickNote;
+    const kDecay = DK ? DK.kDecay : (0.33 - char.lofi * 0.07);
+    const kPd = DK ? DK.kPd : (0.03 + char.lofi * 0.02);
+    const kOct = DK ? DK.kOct : 4;
+    const sNoise = DK ? DK.snare : (char.lofi > 0.5 ? "pink" : "white");
+    const sDecay = DK ? DK.sDecay : (0.13 - char.lofi * 0.03);
+    const sOff = DK ? DK.sOff : 19;
+    const hNoise = DK ? DK.hat : (char.lofi > 0.5 ? "pink" : "white");
+    const hHi = DK ? DK.hHi : (7500 - char.lofi * 3200);
+
     const drumOut = track(new Tone.Gain(0.95 * char.beat).connect(filter));
     drumOutNode = drumOut; drumBase = 0.95 * char.beat;
-    const crush = track(new Tone.BitCrusher(Math.round(4 + (1 - char.lofi) * 8)).connect(drumOut));
-    crush.wet.value = 0.3 + char.lofi * 0.6;
-    const drumLP = track(new Tone.Filter(2200 + (1 - char.lofi) * 8800, "lowpass").connect(crush));
+    const crush = track(new Tone.BitCrusher(Math.round(4 + (1 - lofiAmt) * 8)).connect(drumOut));
+    crush.wet.value = 0.3 + lofiAmt * 0.6;
+    const drumLP = track(new Tone.Filter(2200 + (1 - lofiAmt) * 8800, "lowpass").connect(crush));
     const drumBus = track(new Tone.Gain(1).connect(drumLP));
     const drumVerb = track(new Tone.Reverb({ decay: 1.1 + char.beat * 1.1, wet: 1 }).connect(drumOut));
-    const drumSend = track(new Tone.Gain(0.1 + (1 - char.lofi) * 0.16).connect(drumVerb));
+    const drumSend = track(new Tone.Gain(0.1 + (1 - lofiAmt) * 0.16).connect(drumVerb));
     drumBus.connect(drumSend);
 
     const kick = track(new Tone.MembraneSynth({
-      pitchDecay: 0.03 + char.lofi * 0.02, octaves: 4, oscillator: { type: "sine" },
-      envelope: { attack: 0.001, decay: 0.33 - char.lofi * 0.07, sustain: 0 }, volume: -5,
+      pitchDecay: kPd, octaves: kOct, oscillator: { type: "sine" },
+      envelope: { attack: 0.001, decay: kDecay, sustain: 0 }, volume: -5,
     }).connect(drumBus));
     // snare = a filtered noise burst + a short tuned body, together
     const snareBP = track(new Tone.Filter(1800, "bandpass").connect(drumBus));
     snareBP.Q.value = 0.8;
     const snareNoise = track(new Tone.NoiseSynth({
-      noise: { type: char.lofi > 0.5 ? "pink" : "white" },
-      envelope: { attack: 0.001, decay: 0.13 - char.lofi * 0.03, sustain: 0 }, volume: -13,
+      noise: { type: sNoise },
+      envelope: { attack: 0.001, decay: sDecay, sustain: 0 }, volume: -13,
     }).connect(snareBP));
     const snareBody = track(new Tone.Synth({
       oscillator: { type: "triangle" },
       envelope: { attack: 0.001, decay: 0.12, sustain: 0 }, volume: -17,
     }).connect(drumBus));
-    const hatHP = track(new Tone.Filter(7500 - char.lofi * 3200, "highpass").connect(drumBus));
+    const hatHP = track(new Tone.Filter(hHi, "highpass").connect(drumBus));
     const hat = track(new Tone.NoiseSynth({
-      noise: { type: char.lofi > 0.5 ? "pink" : "white" },
+      noise: { type: hNoise },
       envelope: { attack: 0.001, decay: 0.03, sustain: 0 }, volume: -23,
     }).connect(hatHP));
 
-    const kf = Tone.Frequency(char.kickNote, "midi");
-    const snareBodyF = Tone.Frequency(char.kickNote + 19, "midi");
+    const kf = Tone.Frequency(kickNote, "midi");
+    const snareBodyF = Tone.Frequency(kickNote + sOff, "midi");
     let step = 0;
     const rloop = new Tone.Loop((time) => {
       const D = songDrums;                                // evolve() can swap this
@@ -853,7 +909,7 @@ function buildEngine(char, det) {
     evolve() {
       evo++;
       const rng = mulberry32(hashStr(char.key + "|evo" + evo));
-      songCell = genCell(char.seventh, char.chordSteps, char.melodyRest, rng);   // new tune
+      // (the melody arc regenerates itself when it completes — see the song loop)
       if (rng() < 0.5 && songProg.length > 1) {                                  // reharmonise one chord
         const p = songProg.slice();
         p[1 + Math.floor(rng() * (p.length - 1))] = Math.floor(rng() * char.scale.ints.length);
