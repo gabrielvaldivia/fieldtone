@@ -258,6 +258,21 @@ function genScale(rng) {
   return { ints: Array.from(set).sort((a, b) => a - b) };
 }
 
+/* The melody motif: a rhythmic/contour cell walked over the chord tones.
+   Regenerated on evolution so the tune changes while staying in key. */
+function genCell(seventh, chordSteps, melodyRest, rng) {
+  const ladderN = (seventh ? 4 : 3) * 2;
+  const cell = [];
+  let cur = 0;
+  for (let s = 0; s < chordSteps; s++) {
+    cur = Math.max(0, Math.min(ladderN - 1, cur + (Math.floor(rng() * 5) - 2)));
+    const dr = rng(); const dur = dr < 0.4 ? 1 : dr < 0.75 ? 2 : dr < 0.92 ? 3 : 4;
+    cell.push({ play: rng() > melodyRest, step: cur, oct: rng() < 0.12 ? 1 : 0, dur });
+  }
+  cell[0].play = true; cell[0].step = 0;             // land on the chord root each bar
+  return cell;
+}
+
 /* A 16-step kit pattern (kick / snare / hat), with per-place variation. */
 function genDrums(kit, rng) {
   const K = Array(16).fill(0), S = Array(16).fill(0), H = Array(16).fill(0);
@@ -361,18 +376,7 @@ function makeCharacter(lat, lng) {
   const padOct = 0;
   const leadWave = ["triangle", "sine", "square", "sawtooth", "fmsine", "pwm"][Math.floor(rng() * 6)];
   const melodyRest = 0.55 + rng() * 0.32;                    // sparse: only 13–45% of steps sound
-  // the motif: one rhythmic/contour cell, walked stepwise over the chord's tones
-  // and re-voiced on every chord, so the same tune "follows the changes".
-  // notes hold for their full duration (played as silence after), so the tune breathes.
-  const ladderN = (seventh ? 4 : 3) * 2;
-  const cell = [];
-  let cur = 0;
-  for (let s = 0; s < chordSteps; s++) {
-    cur = Math.max(0, Math.min(ladderN - 1, cur + (Math.floor(rng() * 5) - 2)));
-    const dr = rng(); const dur = dr < 0.4 ? 1 : dr < 0.75 ? 2 : dr < 0.92 ? 3 : 4;
-    cell.push({ play: rng() > melodyRest, step: cur, oct: rng() < 0.12 ? 1 : 0, dur });
-  }
-  cell[0].play = true; cell[0].step = 0;                     // land on the chord root each bar
+  const cell = genCell(seventh, chordSteps, melodyRest, rng);
 
   // lead sits INSIDE the atmosphere — mostly wet, its own delay + reverb send,
   // amounts unique to the place (and modulated by time of day at play)
@@ -399,7 +403,7 @@ function makeCharacter(lat, lng) {
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
-    seventh, progression, chordSteps, leadOct, padOct, leadWave, cell,
+    seventh, progression, chordSteps, leadOct, padOct, leadWave, cell, melodyRest,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     bassHits, bassStyle, bassVerb,
     kit, drums, kickNote, air, airHz, swing };
@@ -521,6 +525,8 @@ function buildEngine(char, det) {
   const chord = { offset: 0 };   // current chord root offset, shared by all voices
   const harmony = { tones: [0] };// current chord's tones, read by the bassline
   let leadVerbNode = null;       // lead reverb send, modulated by time of day
+  // live, mutable arrangement — evolve() swaps these so the piece moves over time
+  let songCell = char.cell, songProg = char.progression, songDrums = char.drums;
 
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
   // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
@@ -587,12 +593,12 @@ function buildEngine(char, det) {
     }));
     lead.connect(leadDelay); lead.connect(leadVerb); lead.connect(leadDry);
 
-    const prog = char.progression, cell = char.cell, CS = char.chordSteps;
+    const CS = char.chordSteps;
     let ladder = null, m = 0, hold = 0;
     const song = new Tone.Loop((time) => {
       const pos = m % CS;
       if (pos === 0) {                         // new chord
-        const di = prog[Math.floor(m / CS) % prog.length];
+        const di = songProg[Math.floor(m / CS) % songProg.length];
         const tones = triad(char.scale, di, char.seventh);
         chord.offset = tones[0];               // drones + bass follow the changes
         harmony.tones = tones;
@@ -604,7 +610,7 @@ function buildEngine(char, det) {
         });
         pad.triggerAttackRelease(freqs, eighth() * CS * 1.02, time);
       }
-      const cs = cell[pos % cell.length];
+      const cs = songCell[pos % songCell.length];
       if (hold > 0) { hold--; m++; return; }   // let long notes ring — keeps the tune sparse
       if (cs.play && ladder) {
         const t = ladder[Math.max(0, Math.min(ladder.length - 1, cs.step))];
@@ -723,11 +729,11 @@ function buildEngine(char, det) {
       envelope: { attack: 0.001, decay: 0.03, sustain: 0 }, volume: -23,
     }).connect(hatHP));
 
-    const D = char.drums;
     const kf = Tone.Frequency(char.kickNote, "midi");
     const snareBodyF = Tone.Frequency(char.kickNote + 19, "midi");
     let step = 0;
     const rloop = new Tone.Loop((time) => {
+      const D = songDrums;                                // evolve() can swap this
       const s = step % 16;
       const sixteenth = (60 / Tone.Transport.bpm.value) / 4;
       const t = time + (s % 2 === 1 ? char.swing * sixteenth * 2 : 0);   // swing the off-16ths
@@ -754,9 +760,30 @@ function buildEngine(char, det) {
     }
   }
 
+  let evo = 0;
   return {
     master, filter, windGain, air: char.air, brightBias: char.brightBias, lofi: char.lofi,
     leadVerb: leadVerbNode, leadVerbBase: char.leadVerbAmt,
+    /* A "movement": re-arrange the details while keeping the place's character.
+       Called about once a minute so the piece never loops verbatim. */
+    evolve() {
+      evo++;
+      const rng = mulberry32(hashStr(char.key + "|evo" + evo));
+      songCell = genCell(char.seventh, char.chordSteps, char.melodyRest, rng);   // new tune
+      if (rng() < 0.5 && songProg.length > 1) {                                  // reharmonise one chord
+        const p = songProg.slice();
+        p[1 + Math.floor(rng() * (p.length - 1))] = Math.floor(rng() * char.scale.ints.length);
+        songProg = p;
+      }
+      if (char.beat > 0 && char.kit !== "none") {                                // drum variation + occasional fill
+        const d = genDrums(char.kit, rng);
+        if (rng() < 0.4) { d.S[15] = 1; if (rng() < 0.5) d.H[15] = 1; }
+        songDrums = d;
+      }
+      det.voices.forEach((v) => {                                               // shift the drone wash
+        v.degrees = v.degrees.map(() => Math.floor(rng() * char.scale.ints.length));
+      });
+    },
     dispose() {
       loops.forEach((l) => { try { l.dispose(); } catch (e) {} });
       nodes.forEach((n) => { try { n.dispose(); } catch (e) {} });
@@ -1012,6 +1039,7 @@ reverseTitle();
 locate(true);                       // default to the real current location
 setInterval(applyConditions, 20000);   // real clock drives the sound
 setInterval(fetchWeather, 10 * 60 * 1000); // live weather refresh
+setInterval(() => { if (state.playing && state.engine && state.engine.evolve) state.engine.evolve(); }, 60000); // a new movement each minute
 </script>
 </body>
 </html>
