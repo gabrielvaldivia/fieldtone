@@ -108,38 +108,97 @@ const mulberry32 = (a) => () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math
 const euclid = (hits, steps, rot = 0) => { const p = []; let b = 0; for (let i = 0; i < steps; i++) { b += hits; if (b >= steps) { b -= steps; p.push(1); } else p.push(0); } return p.map((_, i) => p[(i + rot) % steps]); };
 
 const SCALES = [
-  { name: "Lydian", ints: [0, 2, 4, 6, 7, 9, 11] },
+  // church modes
   { name: "Ionian", ints: [0, 2, 4, 5, 7, 9, 11] },
-  { name: "Mixolydian", ints: [0, 2, 4, 5, 7, 9, 10] },
   { name: "Dorian", ints: [0, 2, 3, 5, 7, 9, 10] },
-  { name: "Aeolian", ints: [0, 2, 3, 5, 7, 8, 10] },
   { name: "Phrygian", ints: [0, 1, 3, 5, 7, 8, 10] },
+  { name: "Lydian", ints: [0, 2, 4, 6, 7, 9, 11] },
+  { name: "Mixolydian", ints: [0, 2, 4, 5, 7, 9, 10] },
+  { name: "Aeolian", ints: [0, 2, 3, 5, 7, 8, 10] },
+  { name: "Locrian", ints: [0, 1, 3, 5, 6, 8, 10] },
+  // minor variants & jazz modes
   { name: "Harmonic minor", ints: [0, 2, 3, 5, 7, 8, 11] },
+  { name: "Melodic minor", ints: [0, 2, 3, 5, 7, 9, 11] },
+  { name: "Lydian dominant", ints: [0, 2, 4, 6, 7, 9, 10] },
+  { name: "Phrygian dominant", ints: [0, 1, 4, 5, 7, 8, 10] },
+  { name: "Ukrainian Dorian", ints: [0, 2, 3, 6, 7, 9, 10] },
+  { name: "Altered", ints: [0, 1, 3, 4, 6, 8, 10] },
+  { name: "Locrian ♮6", ints: [0, 1, 3, 5, 6, 9, 10] },
+  // pentatonic & hexatonic
   { name: "Major pentatonic", ints: [0, 2, 4, 7, 9] },
   { name: "Minor pentatonic", ints: [0, 3, 5, 7, 10] },
+  { name: "Egyptian", ints: [0, 2, 5, 7, 10] },
+  { name: "Blues", ints: [0, 3, 5, 6, 7, 10] },
+  { name: "Man Gong", ints: [0, 3, 5, 8, 10] },
+  { name: "Ritusen", ints: [0, 2, 5, 7, 9] },
+  { name: "Prometheus", ints: [0, 2, 4, 6, 9, 10] },
+  { name: "Tritone", ints: [0, 1, 4, 6, 7, 10] },
+  // symmetric
+  { name: "Whole tone", ints: [0, 2, 4, 6, 8, 10] },
+  { name: "Octatonic", ints: [0, 2, 3, 5, 6, 8, 9, 11] },
+  { name: "Half–whole", ints: [0, 1, 3, 4, 6, 7, 9, 10] },
+  { name: "Augmented", ints: [0, 3, 4, 7, 8, 11] },
+  // Japanese
   { name: "Hirajoshi", ints: [0, 2, 3, 7, 8] },
   { name: "Kumoi", ints: [0, 2, 3, 7, 9] },
   { name: "In sen", ints: [0, 1, 5, 7, 8] },
-  { name: "Whole tone", ints: [0, 2, 4, 6, 8, 10] },
+  { name: "Iwato", ints: [0, 1, 5, 6, 10] },
+  { name: "Pelog", ints: [0, 1, 3, 7, 8] },
+  // Middle-Eastern, Indian, chromatic-color
   { name: "Double harmonic", ints: [0, 1, 4, 5, 7, 8, 11] },
+  { name: "Hungarian minor", ints: [0, 2, 3, 6, 7, 8, 11] },
+  { name: "Neapolitan minor", ints: [0, 1, 3, 5, 7, 8, 11] },
+  { name: "Neapolitan major", ints: [0, 1, 3, 5, 7, 9, 11] },
+  { name: "Enigmatic", ints: [0, 1, 4, 6, 8, 10, 11] },
+  { name: "Persian", ints: [0, 1, 4, 5, 6, 8, 11] },
+  { name: "Todi", ints: [0, 1, 3, 6, 7, 8, 11] },
+  { name: "Marwa", ints: [0, 1, 4, 6, 7, 9, 11] },
+  { name: "Purvi", ints: [0, 1, 4, 6, 7, 8, 11] },
 ];
 
 /* Timbre families — each gives a place a distinct instrument character.
    bias = register shift (semitones); vol = per-voice level; atk = attack multiplier;
-   len = note length as fraction of loop interval; osc = Tone oscillator config;
-   kind fm/am build FMSynth/AMSynth; lp = [min,max] per-voice lowpass sweep. */
+   len = note length as fraction of loop interval; osc = base Tone oscillator config;
+   kind = synth architecture (default Synth; fm/am/mono/duo/pluck/metal);
+   harm/index = FM/AM centres (jittered per place); lp = [min,max] per-voice lowpass. */
 const PALETTES = [
-  { id: "glass", mood: "glass", bias:  5, vol: -15, atk: 1.0, len: 0.55, osc: { type: "fatsine", count: 2, spread: 14 } },
-  { id: "wool",  mood: "wool",  bias: -4, vol: -12, atk: 1.4, len: 0.62, osc: { type: "fattriangle", count: 3, spread: 26 } },
-  { id: "choir", mood: "choir", bias:  4, vol: -16, atk: 1.5, len: 0.66, osc: { type: "fatsine", count: 4, spread: 34 } },
-  { id: "deep",  mood: "deep",  bias:-12, vol:  -9, atk: 1.6, len: 0.72, osc: { type: "sine" } },
-  { id: "reed",  mood: "reed",  bias:  0, vol: -24, atk: 1.2, len: 0.62, osc: { type: "sawtooth" }, lp: [520, 1000] },
-  { id: "haze",  mood: "haze",  bias:  0, vol: -22, atk: 1.1, len: 0.56, kind: "am", harmonicity: 2.4, lp: [700, 1400] },
-  { id: "vapor", mood: "vapor", bias:  2, vol: -16, atk: 1.0, len: 0.60, kind: "fm", harmonicity: 1.004, modIndex: 2.2 },
-  { id: "bell",  mood: "bells", bias:  7, vol: -19, atk: 0.2, len: 0.42, kind: "fm", harmonicity: 3.01, modIndex: 8 },
+  // sustained oscillator pads
+  { id: "glass",   mood: "glass",    bias:  5, vol: -15, atk: 1.0, len: 0.55, osc: { type: "fatsine" } },
+  { id: "wool",    mood: "wool",     bias: -4, vol: -12, atk: 1.4, len: 0.62, osc: { type: "fattriangle" } },
+  { id: "choir",   mood: "choir",    bias:  4, vol: -16, atk: 1.5, len: 0.66, osc: { type: "fatsine" } },
+  { id: "ether",   mood: "ether",    bias:  6, vol: -17, atk: 1.6, len: 0.70, osc: { type: "fatsine" } },
+  { id: "deep",    mood: "deep",     bias:-12, vol:  -9, atk: 1.6, len: 0.72, osc: { type: "sine" } },
+  { id: "sub",     mood: "sub",      bias:-14, vol:  -8, atk: 1.3, len: 0.75, osc: { type: "triangle" } },
+  { id: "crystal", mood: "crystal",  bias:  9, vol: -18, atk: 0.9, len: 0.50, osc: { type: "sine3" } },
+  { id: "organ",   mood: "organ",    bias:  0, vol: -17, atk: 0.8, len: 0.60, osc: { type: "sine4" } },
+  // reed / string (bright oscillators tamed by a lowpass)
+  { id: "reed",    mood: "reed",     bias:  0, vol: -24, atk: 1.2, len: 0.62, osc: { type: "sawtooth" },    lp: [520, 1000] },
+  { id: "string",  mood: "strings",  bias:  2, vol: -24, atk: 1.7, len: 0.68, osc: { type: "fatsawtooth" }, lp: [600, 1600] },
+  { id: "hollow",  mood: "hollow",   bias: -2, vol: -20, atk: 1.1, len: 0.60, osc: { type: "square" },      lp: [440, 900] },
+  { id: "quill",   mood: "quill",    bias:  3, vol: -22, atk: 0.7, len: 0.50, osc: { type: "pulse" },       lp: [700, 1800] },
+  // FM
+  { id: "vapor",   mood: "vapor",    bias:  2, vol: -16, atk: 1.0, len: 0.60, kind: "fm", harm: 1.004, index: 2.2 },
+  { id: "bell",    mood: "bells",    bias:  7, vol: -19, atk: 0.2, len: 0.42, kind: "fm", harm: 3.01,  index: 8 },
+  { id: "gong",    mood: "gong",     bias: -3, vol: -16, atk: 0.3, len: 0.60, kind: "fm", harm: 1.41,  index: 13 },
+  { id: "chime",   mood: "chime",    bias: 10, vol: -20, atk: 0.2, len: 0.40, kind: "fm", harm: 7.02,  index: 5 },
+  // AM
+  { id: "haze",    mood: "haze",     bias:  0, vol: -22, atk: 1.1, len: 0.56, kind: "am", harm: 2.4, lp: [700, 1400] },
+  { id: "shimmer", mood: "shimmer",  bias:  6, vol: -21, atk: 1.2, len: 0.58, kind: "am", harm: 3.5, lp: [900, 2600] },
+  // filtered mono (evolving under a filter envelope)
+  { id: "vox",     mood: "vox",      bias:  1, vol: -18, atk: 1.3, len: 0.66, kind: "mono", osc: { type: "sawtooth" } },
+  { id: "wax",     mood: "wax",      bias: -5, vol: -16, atk: 1.1, len: 0.64, kind: "mono", osc: { type: "square" } },
+  // detuned duo (slow beating + vibrato)
+  { id: "drift",   mood: "drift",    bias:  0, vol: -20, atk: 1.4, len: 0.66, kind: "duo" },
+  // plucked / struck
+  { id: "koto",    mood: "koto",     bias:  5, vol: -14, atk: 0.0, len: 0.50, kind: "pluck" },
+  { id: "metal",   mood: "metallic", bias:  8, vol: -26, atk: 0.0, len: 0.50, kind: "metal", harm: 2.01, index: 20 },
 ];
 
-const KITS = ["pulse", "dub", "tickle", "tribal"];
+const KITS = ["pulse", "dub", "tickle", "tribal", "house", "broken"];
+
+/* Per-place colour effect inserted across the drone bus — a big multiplier on feel.
+   "none" weighted twice so roughly a third of places stay uncoloured. */
+const FXS = ["none", "none", "chorus", "phaser", "tremolo", "vibrato", "autofilter", "chebyshev"];
 
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
@@ -165,6 +224,17 @@ function makeCharacter(lat, lng) {
   const brightBias = 0.55 + rng() * 1.5;                     // dark ↔ bright base timbre
   const detune = 4 + rng() * 22;                             // chorus width, cents
 
+  // continuous timbre — same palette never sounds twice the same
+  const fatCount = 2 + Math.floor(rng() * 4);                // 2–5 unison voices
+  const fatSpread = 10 + Math.floor(rng() * 42);             // detune spread, cents
+  const voiceQ = 0.4 + rng() * 3.2;                          // per-voice filter resonance
+  const fmHarm = (palette.harm || 1) * (0.7 + rng() * 0.7);  // FM/AM ratio jitter
+  const fmIndex = (palette.index || 6) * (0.6 + rng() * 0.8);// FM depth jitter
+
+  // per-place colour effect across the whole drone
+  const fx = FXS[Math.floor(rng() * FXS.length)];
+  const fxParams = { rate: 0.08 + rng() * 3, depth: 0.3 + rng() * 0.6, amt: rng() };
+
   // slow harmonic movement — some places evolve, some stay rooted
   const moving = rng() < 0.45 && scale.ints.length >= 5;
   const prog = [];
@@ -189,6 +259,7 @@ function makeCharacter(lat, lng) {
 
   return { key, scale, palette, root, rhythm, tempo, voices,
     reverbDecay, reverbWet, delayTime, delayFb, delayWet, brightBias, detune,
+    fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams,
     moving, prog, chordDwell,
     kit, kickSteps, kickHits, hatSteps, hatHits, bellSteps, kickNote, air, airHz, swing };
 }
@@ -236,39 +307,73 @@ const $ = (id) => document.getElementById(id);
 /* ================================================================== */
 /* Audio engine                                                        */
 /* ================================================================== */
-/* Build a single drone voice in the current palette's timbre. */
+/* An oscillator config for the palette, with continuous unison detune folded in. */
+function oscFor(char) {
+  const osc = Object.assign({}, char.palette.osc);
+  if (osc.type && /^fat/.test(osc.type)) { osc.count = char.fatCount; osc.spread = char.fatSpread; }
+  return osc;
+}
+
+/* Build one drone voice in the current palette's timbre.
+   Returns a play(freq, dur, time) fn so percussive kinds can attack-only. */
 function makeVoice(char, v, dest, track) {
   const P = char.palette;
+  const env = { attack: v.attack, decay: 2, sustain: 0.72, release: 8 };
   const panner = track(new Tone.Panner(v.pan).connect(dest));
   let target = panner;
   if (P.lp) {
     const cutoff = P.lp[0] + v.bright * (P.lp[1] - P.lp[0]);
-    target = track(new Tone.Filter(cutoff, "lowpass").connect(panner));
+    const f = track(new Tone.Filter(cutoff, "lowpass").connect(panner));
+    f.Q.value = char.voiceQ;
+    target = f;
   }
-  let synth;
-  if (P.kind === "fm") {
-    synth = new Tone.FMSynth({
-      harmonicity: P.harmonicity, modulationIndex: P.modIndex,
-      envelope: { attack: v.attack, decay: 2, sustain: 0.75, release: 8 },
-      modulationEnvelope: { attack: v.attack * 0.8, decay: 1, sustain: 0.6, release: 6 },
-      volume: P.vol,
-    });
-  } else if (P.kind === "am") {
-    synth = new Tone.AMSynth({
-      harmonicity: P.harmonicity,
-      envelope: { attack: v.attack, decay: 2, sustain: 0.8, release: 8 },
-      volume: P.vol,
-    });
-  } else {
-    synth = new Tone.Synth({
-      oscillator: Object.assign({}, P.osc),
-      detune: char.detune * (v.pan < 0 ? -1 : 1),
-      envelope: { attack: v.attack, decay: 2, sustain: 0.72, release: 8 },
-      volume: P.vol,
-    });
+  let synth, attackOnly = false;
+  switch (P.kind) {
+    case "fm":
+      synth = new Tone.FMSynth({ harmonicity: char.fmHarm, modulationIndex: char.fmIndex, volume: P.vol,
+        envelope: env, modulationEnvelope: { attack: v.attack * 0.8, decay: 1, sustain: 0.6, release: 6 } });
+      break;
+    case "am":
+      synth = new Tone.AMSynth({ harmonicity: char.fmHarm, envelope: env, volume: P.vol });
+      break;
+    case "mono":
+      synth = new Tone.MonoSynth({ oscillator: oscFor(char), volume: P.vol, envelope: env,
+        filter: { Q: char.voiceQ, type: "lowpass", rolloff: -24 },
+        filterEnvelope: { attack: v.attack * 1.2, decay: 3, sustain: 0.4, release: 8, baseFrequency: 120, octaves: 3 + v.bright * 3 } });
+      break;
+    case "duo":
+      synth = new Tone.DuoSynth({ harmonicity: 1 + char.detune / 120, vibratoAmount: 0.15, vibratoRate: 3.5, volume: P.vol,
+        voice0: { oscillator: { type: "sine" }, envelope: env },
+        voice1: { oscillator: { type: "triangle" }, envelope: env } });
+      break;
+    case "pluck":
+      synth = new Tone.PluckSynth({ attackNoise: 1, dampening: 1300 + v.bright * 3200, resonance: 0.92, volume: P.vol });
+      attackOnly = true;
+      break;
+    case "metal":
+      synth = new Tone.MetalSynth({ harmonicity: char.fmHarm, modulationIndex: char.fmIndex, volume: P.vol,
+        envelope: { attack: 0.002, decay: 1.4, release: 2 }, resonance: 700 + v.bright * 3200, octaves: 1.5 });
+      attackOnly = true;
+      break;
+    default:
+      synth = new Tone.Synth({ oscillator: oscFor(char), detune: char.detune * (v.pan < 0 ? -1 : 1), envelope: env, volume: P.vol });
   }
   track(synth.connect(target));
-  return synth;
+  return (freq, dur, time) => attackOnly ? synth.triggerAttack(freq, time) : synth.triggerAttackRelease(freq, dur, time);
+}
+
+/* Optional per-place colour effect across the whole drone bus. */
+function makeFX(char, track) {
+  const p = char.fxParams;
+  switch (char.fx) {
+    case "chorus":     { const n = new Tone.Chorus(0.4 + p.rate, 3, 0.6).start(); n.wet.value = 0.45; return track(n); }
+    case "phaser":     { const n = new Tone.Phaser({ frequency: 0.2 + p.rate * 0.5, octaves: 3, baseFrequency: 300 }); n.wet.value = 0.5; return track(n); }
+    case "tremolo":    { const n = new Tone.Tremolo(0.4 + p.rate, 0.4 + p.depth * 0.4).start(); n.wet.value = 0.7; return track(n); }
+    case "vibrato":    return track(new Tone.Vibrato(1 + p.rate * 2, 0.02 + p.amt * 0.06));
+    case "autofilter": { const n = new Tone.AutoFilter({ frequency: 0.05 + p.rate * 0.2, baseFrequency: 220, octaves: 3 }).start(); n.wet.value = 0.6; return track(n); }
+    case "chebyshev":  { const n = new Tone.Chebyshev(2 + Math.floor(p.amt * 3)); n.wet.value = 0.12 + p.amt * 0.18; return track(n); }
+    default:           return null;
+  }
 }
 
 function buildEngine(char, det) {
@@ -283,14 +388,19 @@ function buildEngine(char, det) {
   const delay = track(new Tone.FeedbackDelay(char.delayTime, char.delayFb).connect(reverb));
   delay.wet.value = char.delayWet;
 
+  // colour effect (if any) sits in front of the delay; voices feed into it
+  const color = makeFX(char, track);
+  if (color) color.connect(delay);
+  const voiceDest = color || delay;
+
   det.voices.forEach((v) => {
-    const synth = makeVoice(char, v, delay, track);
+    const play = makeVoice(char, v, voiceDest, track);
     const loop = new Tone.Loop((time) => {
       if (Math.random() > 0.32 + params.density * 0.68) return;
       const deg = v.degrees[Math.floor(Math.random() * v.degrees.length)];
       let midi = char.root + char.scale.ints[deg] + 12 * v.octave + chord.offset;
       midi = Math.max(26, Math.min(96, midi));
-      synth.triggerAttackRelease(Tone.Frequency(midi, "midi"), v.interval * char.palette.len, time);
+      play(Tone.Frequency(midi, "midi"), v.interval * char.palette.len, time);
     }, v.interval);
     loop.start(Math.random() * 3);
     loops.push(loop);
@@ -400,6 +510,16 @@ function buildEngine(char, det) {
         if (h && Math.random() < 0.8 * pres) hat.triggerAttackRelease("32n", t, 0.4 + Math.random() * 0.4);
         if (k && Math.random() < 0.3) kick.triggerAttackRelease(kf, "8n", t, 0.5);
         if (bl && Math.random() < 0.55 * pres) bellHit(t);
+      } else if (char.kit === "house") {                   // four-on-the-floor + offbeat hats
+        if (step % 4 === 0) kick.triggerAttackRelease(kf, "8n", t, 0.95);
+        if (step % 4 === 2 && Math.random() < 0.85 * pres) hat.triggerAttackRelease("16n", t, 0.5 + Math.random() * 0.3);
+        if (h && step % 2 === 1 && Math.random() < 0.4 * pres) hat.triggerAttackRelease("32n", t, 0.3);
+        if (bl && Math.random() < 0.3 * pres) bellHit(t);
+      } else if (char.kit === "broken") {                  // syncopated, ghost-note breakbeat
+        if (k && Math.random() < 0.85) kick.triggerAttackRelease(kf, "8n", t, 0.9);
+        if (h && Math.random() < 0.75 * pres) hat.triggerAttackRelease("16n", t, 0.3 + Math.random() * 0.5);
+        if (!k && step % 4 === 2 && Math.random() < 0.5) rim.triggerAttackRelease(Tone.Frequency(char.kickNote + 12, "midi"), "16n", t, 0.5);
+        if (bl && Math.random() < 0.4 * pres) bellHit(t);
       } else {                                             // pulse — steady, reliable groove
         if (k && Math.random() < 0.92) kick.triggerAttackRelease(kf, "8n", t, 0.9);
         if (h && Math.random() < 0.7 * pres + params.rain * 0.3) hat.triggerAttackRelease("16n", t, 0.5 + Math.random() * 0.3);
