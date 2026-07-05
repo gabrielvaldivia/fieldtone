@@ -351,6 +351,83 @@ const LEAD_KINDS = [
   { id: "duo",    vol: -22, build: () => new Tone.DuoSynth({ harmonicity: 1.5, vibratoAmount: 0.08, vibratoRate: 4, voice0: { oscillator: { type: "triangle" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } }, voice1: { oscillator: { type: "sine" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } } }) },
 ];
 
+/* ================================================================== */
+/* Geography → genre                                                   */
+/* ================================================================== */
+/* Scale character by name (used to pick genre-appropriate scales). */
+const SC = {
+  ionian: [0, 2, 4, 5, 7, 9, 11], mixo: [0, 2, 4, 5, 7, 9, 10], majPent: [0, 2, 4, 7, 9], minPent: [0, 3, 5, 7, 10],
+  blues: [0, 3, 5, 6, 7, 10], dorian: [0, 2, 3, 5, 7, 9, 10], aeolian: [0, 2, 3, 5, 7, 8, 10], harmMin: [0, 2, 3, 5, 7, 8, 11],
+  melMin: [0, 2, 3, 5, 7, 9, 11], phryg: [0, 1, 3, 5, 7, 8, 10], phrygDom: [0, 1, 4, 5, 7, 8, 10], dblHarm: [0, 1, 4, 5, 7, 8, 11],
+  hirajoshi: [0, 2, 3, 7, 8], kumoi: [0, 2, 3, 7, 9], insen: [0, 1, 5, 7, 8], pelog: [0, 1, 3, 7, 8],
+  wholeTone: [0, 2, 4, 6, 8, 10], lydian: [0, 2, 4, 6, 7, 9, 11],
+};
+
+/* A genre = a full musical profile: tempo, groove, grit, room, chord colour,
+   which lead instruments, which scales, and which drum sounds fit. */
+const GENRES = {
+  cyberpunk:    { tempo: [108, 132], beat: 1.0,  kit: "four",    swing: [0, 0.05],    lofi: [0.1, 0.4],  verb: [1.8, 4],  drone: 0.5,  droneChance: 0.4,  seventh: 0.4,  crackle: 0.1,  leads: ["synth", "pwm", "bell", "chime", "glass"], scales: ["harmMin", "phrygDom", "wholeTone", "aeolian", "dblHarm"], drums: ["808", "clean"] },
+  hiphop:       { tempo: [82, 96],   beat: 1.0,  kit: "boombap", swing: [0.1, 0.22],  lofi: [0.4, 0.85], verb: [1.5, 4],  drone: 0.5,  droneChance: 0.25, seventh: 0.85, crackle: 0.7,  leads: ["rhodes", "bell", "soft", "glass"], scales: ["dorian", "minPent", "aeolian", "blues"], drums: ["vinyl", "tape", "808"] },
+  bluegrass:    { tempo: [92, 132],  beat: 0.8,  kit: "brush",   swing: [0.08, 0.16], lofi: [0.1, 0.4],  verb: [1.5, 3.5], drone: 0.3, droneChance: 0.12, seventh: 0.3,  crackle: 0.3,  leads: ["pluck", "koto", "square"], scales: ["mixo", "majPent", "ionian", "dorian"], drums: ["acoustic", "clean"] },
+  blues:        { tempo: [68, 100],  beat: 0.8,  kit: "brush",   swing: [0.12, 0.22], lofi: [0.2, 0.6],  verb: [1.8, 4],  drone: 0.3,  droneChance: 0.15, seventh: 0.7,  crackle: 0.4,  leads: ["rhodes", "reed", "soft", "pluck"], scales: ["blues", "minPent", "dorian", "mixo"], drums: ["acoustic", "vinyl", "tape"] },
+  jazz:         { tempo: [88, 140],  beat: 0.85, kit: "brush",   swing: [0.14, 0.26], lofi: [0.15, 0.5], verb: [1.8, 4],  drone: 0.3,  droneChance: 0.15, seventh: 0.95, crackle: 0.35, leads: ["rhodes", "reed", "bell", "duo"], scales: ["dorian", "melMin", "mixo", "aeolian"], drums: ["acoustic", "vinyl", "clean"] },
+  techno:       { tempo: [124, 134], beat: 1.0,  kit: "four",    swing: [0, 0.05],    lofi: [0.1, 0.4],  verb: [1.6, 3.8], drone: 0.5, droneChance: 0.35, seventh: 0.3,  crackle: 0.1,  leads: ["synth", "pwm", "square", "bell"], scales: ["aeolian", "phryg", "harmMin", "minPent"], drums: ["808", "clean"] },
+  house:        { tempo: [118, 126], beat: 1.0,  kit: "four",    swing: [0.04, 0.12], lofi: [0.1, 0.4],  verb: [1.8, 4],  drone: 0.4,  droneChance: 0.3,  seventh: 0.6,  crackle: 0.15, leads: ["rhodes", "pluck", "soft", "bell"], scales: ["dorian", "ionian", "minPent", "mixo"], drums: ["vinyl", "clean", "808"] },
+  afrobeat:     { tempo: [100, 126], beat: 1.0,  kit: "boombap", swing: [0.04, 0.12], lofi: [0.1, 0.4],  verb: [1.5, 3.5], drone: 0.4, droneChance: 0.2,  seventh: 0.5,  crackle: 0.2,  leads: ["pluck", "bell", "reed", "koto"], scales: ["majPent", "mixo", "dorian", "ionian"], drums: ["acoustic", "clean"] },
+  latin:        { tempo: [88, 120],  beat: 0.9,  kit: "boombap", swing: [0.06, 0.16], lofi: [0.15, 0.5], verb: [1.5, 3.5], drone: 0.35,droneChance: 0.2,  seventh: 0.8,  crackle: 0.3,  leads: ["pluck", "koto", "rhodes", "reed"], scales: ["dorian", "harmMin", "majPent", "mixo"], drums: ["acoustic", "vinyl", "clean"] },
+  flamenco:     { tempo: [90, 130],  beat: 0.7,  kit: "brush",   swing: [0.06, 0.16], lofi: [0.1, 0.4],  verb: [1.6, 3.5], drone: 0.25,droneChance: 0.15, seventh: 0.4,  crackle: 0.2,  leads: ["pluck", "koto", "reed"], scales: ["phrygDom", "phryg", "harmMin", "dblHarm"], drums: ["acoustic", "clean"] },
+  mediterranean:{ tempo: [86, 124],  beat: 0.75, kit: "brush",   swing: [0.06, 0.16], lofi: [0.15, 0.5], verb: [1.8, 4],  drone: 0.3,  droneChance: 0.25, seventh: 0.5,  crackle: 0.3,  leads: ["pluck", "reed", "soft", "koto"], scales: ["phryg", "harmMin", "dorian", "aeolian"], drums: ["acoustic", "vinyl"] },
+  middleeastern:{ tempo: [84, 120],  beat: 0.75, kit: "boombap", swing: [0.05, 0.14], lofi: [0.15, 0.5], verb: [2, 5],    drone: 0.6,  droneChance: 0.5,  seventh: 0.4,  crackle: 0.25, leads: ["pluck", "reed", "koto", "bell"], scales: ["dblHarm", "phrygDom", "harmMin", "phryg"], drums: ["acoustic", "vinyl"] },
+  indian:       { tempo: [84, 130],  beat: 0.8,  kit: "boombap", swing: [0.04, 0.12], lofi: [0.1, 0.45], verb: [1.8, 4.5], drone: 0.7, droneChance: 0.6,  seventh: 0.3,  crackle: 0.2,  leads: ["pluck", "reed", "koto", "bell"], scales: ["dblHarm", "phrygDom", "harmMin", "kumoi"], drums: ["acoustic", "clean"] },
+  gamelan:      { tempo: [76, 116],  beat: 0.6,  kit: "brush",   swing: [0.02, 0.1],  lofi: [0.1, 0.5],  verb: [2.5, 6],  drone: 0.5,  droneChance: 0.45, seventh: 0.3,  crackle: 0.2,  leads: ["chime", "bell", "koto", "glass"], scales: ["pelog", "hirajoshi", "insen", "kumoi"], drums: ["clean", "acoustic"] },
+  eastasian:    { tempo: [76, 116],  beat: 0.55, kit: "brush",   swing: [0.02, 0.1],  lofi: [0.1, 0.5],  verb: [2, 5],    drone: 0.4,  droneChance: 0.4,  seventh: 0.3,  crackle: 0.25, leads: ["koto", "pluck", "bell", "glass"], scales: ["majPent", "hirajoshi", "kumoi", "insen"], drums: ["clean", "acoustic"] },
+  nordic:       { tempo: [52, 84],   beat: 0.25, kit: "boombap", swing: [0, 0.08],    lofi: [0.05, 0.4], verb: [6, 13],   drone: 0.9,  droneChance: 0.85, seventh: 0.4,  crackle: 0.15, leads: ["glass", "soft", "bell", "chime"], scales: ["aeolian", "lydian", "dorian", "minPent"], drums: ["clean", "tape"] },
+  celtic:       { tempo: [96, 140],  beat: 0.7,  kit: "brush",   swing: [0.06, 0.14], lofi: [0.1, 0.4],  verb: [1.8, 4],  drone: 0.4,  droneChance: 0.35, seventh: 0.3,  crackle: 0.2,  leads: ["pluck", "koto", "reed", "soft"], scales: ["dorian", "mixo", "majPent", "aeolian"], drums: ["acoustic", "clean"] },
+  classical:    { tempo: [58, 104],  beat: 0.35, kit: "brush",   swing: [0.02, 0.08], lofi: [0.05, 0.3], verb: [4, 10],   drone: 0.6,  droneChance: 0.5,  seventh: 0.6,  crackle: 0.1,  leads: ["reed", "soft", "glass", "bell"], scales: ["ionian", "aeolian", "melMin", "harmMin"], drums: ["acoustic", "clean"] },
+  island:       { tempo: [68, 92],   beat: 0.8,  kit: "dub",     swing: [0.05, 0.14], lofi: [0.2, 0.6],  verb: [3, 7],    drone: 0.5,  droneChance: 0.3,  seventh: 0.6,  crackle: 0.3,  leads: ["pluck", "soft", "rhodes", "bell"], scales: ["mixo", "ionian", "majPent", "dorian"], drums: ["vinyl", "clean", "tape"] },
+  balkan:       { tempo: [100, 150], beat: 0.8,  kit: "boombap", swing: [0.04, 0.14], lofi: [0.15, 0.5], verb: [1.8, 4],  drone: 0.4,  droneChance: 0.35, seventh: 0.4,  crackle: 0.25, leads: ["reed", "pwm", "pluck", "duo"], scales: ["harmMin", "phrygDom", "aeolian", "dblHarm"], drums: ["acoustic", "vinyl"] },
+  lofi:         { tempo: [70, 92],   beat: 0.9,  kit: "boombap", swing: [0.1, 0.2],   lofi: [0.5, 0.9],  verb: [1.8, 4],  drone: 0.55, droneChance: 0.35, seventh: 0.85, crackle: 0.8,  leads: ["rhodes", "soft", "glass", "bell"], scales: ["dorian", "aeolian", "minPent", "majPent"], drums: ["vinyl", "tape"] },
+  ambient:      { tempo: [48, 78],   beat: 0.0,  kit: "none",    swing: [0, 0.02],    lofi: [0, 0.4],    verb: [6, 13],   drone: 1.0,  droneChance: 1.0,  seventh: 0.4,  crackle: 0.1,  leads: ["glass", "soft", "bell", "chime"], scales: ["lydian", "wholeTone", "aeolian", "dorian"], drums: ["clean"] },
+};
+
+/* Representative points across the world; a location takes the nearest one's genre. */
+const GENRE_ANCHORS = [
+  [35.7, 139.7, "cyberpunk"], [37.5, 127, "cyberpunk"], [22.3, 114.2, "cyberpunk"], [31.2, 121.5, "cyberpunk"], [25, 121.5, "cyberpunk"],
+  [39.9, 116.4, "eastasian"], [30.6, 104, "eastasian"], [13.8, 100.5, "eastasian"], [14.6, 121, "eastasian"], [21, 105.8, "eastasian"], [23.1, 113.3, "eastasian"],
+  [40.7, -74, "hiphop"], [34, -118.2, "hiphop"], [42.3, -71, "hiphop"], [40, -75.2, "hiphop"], [39.3, -76.6, "hiphop"], [38.9, -77, "hiphop"],
+  [36.2, -86.8, "bluegrass"], [35.6, -82.5, "bluegrass"], [38.2, -85.7, "bluegrass"], [34.7, -92.3, "bluegrass"], [30.3, -97.7, "bluegrass"], [33.7, -84.4, "bluegrass"],
+  [41.9, -87.6, "blues"], [35.1, -90, "blues"], [32.3, -90.2, "blues"],
+  [30, -90, "jazz"],
+  [42.3, -83, "techno"], [52.5, 13.4, "techno"],
+  [48.9, 2.4, "house"], [38.9, 1.4, "house"], [52.4, 4.9, "house"],
+  [6.5, 3.4, "afrobeat"], [5.6, -0.2, "afrobeat"], [-1.3, 36.8, "afrobeat"], [9, 38.7, "afrobeat"], [-4.3, 15.3, "afrobeat"], [14.7, -17.4, "afrobeat"], [-26.2, 28, "afrobeat"],
+  [-22.9, -43.2, "latin"], [19.4, -99.1, "latin"], [23, -82, "latin"], [-12, -77, "latin"], [-34.6, -58.4, "latin"], [4.7, -74, "latin"], [-23.5, -46.6, "latin"], [25.8, -80.2, "latin"],
+  [40.4, -3.7, "flamenco"], [37.4, -6, "flamenco"],
+  [38, 23.7, "mediterranean"], [41.9, 12.5, "mediterranean"], [38.7, -9.1, "mediterranean"], [40.8, 14.3, "mediterranean"], [41.4, 2.2, "mediterranean"],
+  [30, 31.2, "middleeastern"], [41, 29, "middleeastern"], [31.6, -8, "middleeastern"], [35.7, 51.4, "middleeastern"], [24.7, 46.7, "middleeastern"], [25.2, 55.3, "middleeastern"], [33.3, 44.4, "middleeastern"],
+  [19, 72.9, "indian"], [28.6, 77.2, "indian"], [13, 80.3, "indian"], [27.7, 85.3, "indian"], [22.6, 88.4, "indian"],
+  [-6.2, 106.8, "gamelan"], [-8.4, 115.2, "gamelan"], [3.1, 101.7, "gamelan"],
+  [64.1, -21.9, "nordic"], [59.9, 10.8, "nordic"], [59.3, 18, "nordic"], [60.2, 25, "nordic"], [55.7, 12.6, "nordic"],
+  [53.3, -6.3, "celtic"], [55.9, -3.2, "celtic"], [55.9, -4.3, "celtic"],
+  [48.2, 16.4, "classical"], [48.1, 11.6, "classical"], [47.5, 19, "classical"], [50.1, 14.4, "classical"],
+  [18, -76.8, "island"], [21.3, -157.9, "island"], [18.5, -66.1, "island"], [-18, 178, "island"], [25, -77.4, "island"],
+  [55.8, 37.6, "balkan"], [50.4, 30.5, "balkan"], [44.8, 20.5, "balkan"], [44.4, 26.1, "balkan"],
+  [51.5, -0.1, "lofi"], [-33.9, 151.2, "lofi"], [-37.8, 145, "lofi"], [49.3, -123, "lofi"], [43.7, -79.4, "lofi"], [47.6, -122.3, "lofi"], [37.8, -122.4, "lofi"], [45.5, -122.7, "lofi"],
+  [23, 15, "ambient"], [-25, 135, "ambient"], [66, 100, "ambient"], [-78, 0, "ambient"], [5, -30, "ambient"], [10, -160, "ambient"], [-48, -72, "ambient"], [72, -40, "ambient"], [33, 80, "ambient"], [-23, 22, "ambient"], [-4, -63, "ambient"],
+];
+
+/* Nearest-anchor genre for a coordinate (equirectangular distance, lng weighted by latitude). */
+function genreOf(lat, lng) {
+  const cl = Math.cos(lat * Math.PI / 180);
+  let best = "lofi", bestD = Infinity;
+  for (const a of GENRE_ANCHORS) {
+    let dl = Math.abs(lng - a[1]); if (dl > 180) dl = 360 - dl;
+    const d = (lat - a[0]) * (lat - a[0]) + (dl * cl) * (dl * cl);
+    if (d < bestD) { bestD = d; best = a[2]; }
+  }
+  return best;
+}
+
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
 
@@ -358,29 +435,32 @@ function makeCharacter(lat, lng) {
   const c = cellOf(lat, lng);
   const key = c.lat.toFixed(3) + "," + c.lng.toFixed(3);
   const rng = mulberry32(hashStr(key));
-  const archetype = ARCH_POOL[Math.floor(rng() * ARCH_POOL.length)];
-  const scale = genScale(rng);                               // one of thousands
+  const genre = genreOf(c.lat, c.lng);                       // GEOGRAPHY picks the genre
+  const G = GENRES[genre];
+  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+  // scale: genre-appropriate, with an occasional wildcard for surprise
+  const scale = { ints: (rng() < 0.12 ? genScale(rng).ints : SC[pick(G.scales)]) };
   const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
   const root = 41 + Math.floor(rng() * 12) + palette.bias;   // register bias per palette
-  const tempo = Math.round(rangePick(rng, archetype.tempo));
-  const beat = archetype.beat;                               // beat presence/level from the archetype
+  const tempo = Math.round(rangePick(rng, G.tempo));
+  const beat = G.beat;                                       // beat presence/level from the genre
   const rhythm = beat;                                       // drives the grooving dot in the UI
   const voices = 2 + Math.floor(rng() * 5);                  // 2–6
-  const lofi = rangePick(rng, archetype.lofi);               // grit / dust amount
-  const crackle = Math.min(1, archetype.crackle * (0.5 + rng()));
-  const kit = archetype.kit;
+  const lofi = rangePick(rng, G.lofi);                       // grit / dust amount
+  const crackle = Math.min(1, G.crackle * (0.5 + rng()));
+  const kit = G.kit;
   const drums = genDrums(kit, rng);
+  const drumKit = pick(G.drums);                             // default drum SOUND fits the genre
 
-  // arrangement — NOT every place is a drone. Beat-driven places are usually just
-  // melody + rhythm; the ambient/drone archetypes keep their wash. Chords come and go.
-  const beaty = archetype.beat > 0;
-  const hasDrone = beaty ? (rng() < 0.4) : true;
+  // arrangement — NOT every place is a drone; the genre decides how likely a wash is
+  const hasDrone = rng() < G.droneChance;
   const hasPad = rng() < (hasDrone ? 0.65 : 0.85);
-  const droneLevel = hasDrone ? archetype.drone : 0;
-  const leadKind = LEAD_KINDS[Math.floor(rng() * LEAD_KINDS.length)];   // the melody's instrument
+  const droneLevel = hasDrone ? G.drone : 0;
+  const leadId = pick(G.leads);
+  const leadKind = LEAD_KINDS.find((k) => k.id === leadId) || LEAD_KINDS[0];   // genre-appropriate instrument
 
-  // the "space" — the archetype sets the room, from intimate to cathedral
-  const reverbDecay = rangePick(rng, archetype.verb);
+  // the "space" — the genre sets the room, from intimate to cathedral
+  const reverbDecay = rangePick(rng, G.verb);
   const reverbWet = 0.38 + rng() * 0.3;
   const delayTime = 0.16 + rng() * 0.42;
   const delayFb = 0.18 + rng() * 0.38;
@@ -423,7 +503,7 @@ function makeCharacter(lat, lng) {
   const bassWave = ["sine", "triangle", "sawtooth", "square"][Math.floor(rng() * 4)];
 
   // ---- song layer: a chord progression, and a melody that follows it ----
-  const seventh = rng() < archetype.seventh;                 // jazzier archetypes use 7th chords
+  const seventh = rng() < G.seventh;                         // jazzier genres use 7th chords
   const progLen = [1, 2, 2, 3, 3, 4, 4][Math.floor(rng() * 7)];
   const progression = [0];                                   // always open on the tonic
   for (let i = 1; i < progLen; i++) {
@@ -454,10 +534,10 @@ function makeCharacter(lat, lng) {
   const kickNote = 33 + Math.floor(rng() * 5);               // stable low thump, not root-following
   const air = 0.03 + rng() * 0.09;
   const airHz = 300 + rng() * 900;
-  const swing = rangePick(rng, archetype.swing);
+  const swing = rangePick(rng, G.swing);
 
   return { key, scale, palette, root, rhythm, tempo, voices,
-    archetype, beat, lofi, crackle, droneLevel, hasDrone, hasPad, leadKind,
+    genre, beat, lofi, crackle, droneLevel, hasDrone, hasPad, leadKind, drumKit,
     reverbDecay, reverbWet, delayTime, delayFb, delayWet, brightBias, detune,
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
@@ -1018,6 +1098,7 @@ function renderInfo() {
   const w = state.weather;
   let s = `${cl.lat.toFixed(3)}° ${cl.lng.toFixed(3)}° · ${hh}:${mm}`;
   if (w.desc) s += ` · ${Math.round(w.temp)}°C · ${w.desc} · wind ${Math.round(w.windKmh || 0)} km/h`;
+  if (state.char && state.char.genre) s += ` · ${state.char.genre}`;
   $("info").textContent = s;
 }
 
