@@ -78,22 +78,22 @@
   body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
   #hint { font-size: 9px; color: var(--faint); }
 
-  /* bottom — the mixer: sliders to balance the parts and dial the effects */
-  .controls { width: min(560px, 100%); display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px 18px; }
-  .slider { display: flex; flex-direction: column; gap: 6px; }
-  .slider label { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
-  .slider input[type=range] {
-    -webkit-appearance: none; appearance: none; width: 100%; height: 2px; border-radius: 2px;
-    background: var(--line); outline: none; cursor: pointer; margin: 6px 0;
+  /* bottom — the mixer: a DAW-style rack of channel strips + DJ effects */
+  .controls { width: 100%; overflow-x: auto; overflow-y: hidden; }
+  .rack { display: flex; gap: 12px; justify-content: safe center; min-width: min-content; padding: 4px 8px 0; }
+  .strip { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: none; }
+  .pick {
+    width: 62px; max-width: 62px; height: 22px; background: transparent; border: 1px solid var(--line); border-radius: 4px;
+    color: var(--ink); font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 0 4px; cursor: pointer; text-align: center;
   }
-  .slider input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none; width: 12px; height: 12px; border-radius: 50%;
-    background: var(--ink); cursor: pointer;
-  }
-  .slider input[type=range]::-moz-range-thumb {
-    width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--ink); cursor: pointer;
-  }
-  button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+  .pick option { background: var(--top); color: var(--ink); text-transform: none; }
+  .pickspacer { height: 22px; }
+  .fader { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 84px; accent-color: var(--ink); background: transparent; cursor: pointer; }
+  .strip label { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+  .strip.fx label { color: var(--ink); opacity: 0.6; }
+  .divider { width: 1px; align-self: stretch; background: var(--line); margin: 0 3px; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
   @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -118,14 +118,8 @@
     <div id="hint" class="mono">tap to listen</div>
   </main>
 
-  <footer class="controls" id="mixer" aria-label="Mixer">
-    <div class="slider"><label for="s-melody">melody</label><input type="range" id="s-melody" data-mix="melody" min="0" max="2" step="0.01" value="1"></div>
-    <div class="slider"><label for="s-chords">chords</label><input type="range" id="s-chords" data-mix="chords" min="0" max="2" step="0.01" value="1"></div>
-    <div class="slider"><label for="s-bass">bass</label><input type="range" id="s-bass" data-mix="bass" min="0" max="2" step="0.01" value="1"></div>
-    <div class="slider"><label for="s-beat">beat</label><input type="range" id="s-beat" data-mix="beat" min="0" max="2" step="0.01" value="1"></div>
-    <div class="slider"><label for="s-drone">drone</label><input type="range" id="s-drone" data-mix="drone" min="0" max="2" step="0.01" value="1"></div>
-    <div class="slider"><label for="s-reverb">reverb</label><input type="range" id="s-reverb" data-mix="reverb" min="0" max="2" step="0.01" value="1"></div>
-    <div class="slider"><label for="s-delay">delay</label><input type="range" id="s-delay" data-mix="delay" min="0" max="2" step="0.01" value="1"></div>
+  <footer class="controls" aria-label="Mixer">
+    <div class="rack" id="rack"></div>
   </footer>
 
 <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
@@ -462,8 +456,42 @@ const state = {
 };
 state.char = makeCharacter(state.center.lat, state.center.lng);
 const params = { density: 0.75, rain: 0, wind: 0.1 };
-// mixer state — 0–2 multipliers set by the sliders, applied to every engine
-const mix = { melody: 1, chords: 1, bass: 1, beat: 1, drone: 1, reverb: 1, delay: 1 };
+// mixer state — levels are 0–2 multipliers; DJ fx are 0–1 (filter 0.5 = neutral)
+const mix = { melody: 1, chords: 1, bass: 1, beat: 1, drone: 1, reverb: 1, delay: 1,
+              filter: 0.5, phaser: 0, flanger: 0, tremolo: 0, crush: 0 };
+// per-channel type overrides ("auto" = use the location's own choice)
+const picks = { melody: "auto", chords: "auto", bass: "auto", beat: "auto", drone: "auto", reverb: "auto", delay: "auto" };
+
+const PALETTE_BY_ID = Object.fromEntries(PALETTES.map((p) => [p.id, p]));
+const LEAD_TYPES  = ["auto", "sine", "triangle", "square", "sawtooth", "fmsine", "fmtriangle", "fmsquare", "amsine", "pwm", "pulse", "fatsawtooth"];
+const PAD_TYPES   = ["auto", "triangle", "sine", "sawtooth", "square", "fatsine", "fattriangle", "fatsawtooth", "amsine", "pwm"];
+const BASS_TYPES  = ["auto", "sine", "triangle", "sawtooth", "square", "pulse", "fmsquare"];
+const KIT_TYPES   = ["auto", "boombap", "four", "dub", "brush", "none"];
+const DRONE_TYPES = ["auto", ...PALETTES.map((p) => p.id)];
+const REVERB_TYPES = ["auto", "room", "hall", "cathedral", "plate", "off"];
+const DELAY_TYPES  = ["auto", "off", "slap", "eighth", "dotted", "tape", "long"];
+const CHANNELS = [
+  { key: "melody", opts: LEAD_TYPES }, { key: "chords", opts: PAD_TYPES }, { key: "bass", opts: BASS_TYPES },
+  { key: "beat", opts: KIT_TYPES }, { key: "drone", opts: DRONE_TYPES }, { key: "reverb", opts: REVERB_TYPES }, { key: "delay", opts: DELAY_TYPES },
+];
+const FX_CHANNELS = ["filter", "phaser", "flanger", "tremolo", "crush"];
+
+/* Fold the user's dropdown picks onto a copy of the character. */
+function applyPicks(char) {
+  const c = Object.assign({}, char);
+  if (picks.melody !== "auto") c.leadWave = picks.melody;
+  if (picks.chords !== "auto") c.padType = picks.chords;
+  if (picks.bass !== "auto") c.bassWave = picks.bass;
+  if (picks.beat !== "auto") {
+    c.kit = picks.beat;
+    c.beat = picks.beat === "none" ? 0 : (char.beat > 0 ? char.beat : 0.9);
+    if (picks.beat !== "none") c.drums = genDrums(picks.beat, mulberry32(hashStr(char.key + picks.beat)));
+  }
+  if (picks.drone !== "auto" && PALETTE_BY_ID[picks.drone]) c.palette = PALETTE_BY_ID[picks.drone];
+  if (picks.reverb !== "auto") { const P = { room: [1.2, 0.4], hall: [4, 0.5], cathedral: [10, 0.6], plate: [2.6, 0.5], off: [1, 0] }[picks.reverb]; if (P) { c.reverbDecay = P[0]; c.reverbWet = P[1]; } }
+  if (picks.delay !== "auto") { const P = { off: [0.25, 0.2, 0], slap: [0.11, 0.12, 0.28], eighth: [0.24, 0.35, 0.3], dotted: [0.36, 0.4, 0.32], tape: [0.3, 0.55, 0.3], long: [0.6, 0.55, 0.34] }[picks.delay]; if (P) { c.delayTime = P[0]; c.delayFb = P[1]; c.delayWet = P[2]; } }
+  return c;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -555,7 +583,14 @@ function buildEngine(char, det) {
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
   // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
   const out = track(new Tone.Limiter(-1).toDestination());
-  const master = track(new Tone.Gain(0).connect(out));
+  // DJ master inserts, post-fader — bypassed by default; the DJ sliders bring them in
+  const crusher = track(new Tone.BitCrusher(8).connect(out)); crusher.wet.value = 0;
+  const tremolo = track(new Tone.Tremolo(6, 0.9).connect(crusher)); tremolo.wet.value = 0; tremolo.start();
+  const flanger = track(new Tone.FeedbackDelay(0.006, 0.5).connect(tremolo)); flanger.wet.value = 0;
+  const flLFO = track(new Tone.LFO("0.15hz", 0.002, 0.009)); flLFO.connect(flanger.delayTime); flLFO.start();
+  const phaser = track(new Tone.Phaser({ frequency: 0.5, octaves: 4, baseFrequency: 400 }).connect(flanger)); phaser.wet.value = 0;
+  const djFilter = track(new Tone.Filter(20000, "lowpass").connect(phaser));   // DJ high/low-pass sweep
+  const master = track(new Tone.Gain(0).connect(djFilter));
   const wow = char.lofi > 0.25
     ? track(new Tone.Vibrato(4 + char.lofi * 3, Math.min(0.06, char.lofi * 0.04)).connect(master))
     : null;
@@ -599,7 +634,7 @@ function buildEngine(char, det) {
     const padGain = track(new Tone.Gain(1).connect(reverb));
     padGainNode = padGain;
     const pad = track(new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "triangle" },
+      oscillator: { type: char.padType || "triangle" },
       envelope: { attack: 0.8, decay: 1.8, sustain: 0.6, release: 3 },
       volume: -22,
     }).connect(padGain));
@@ -807,6 +842,15 @@ function buildEngine(char, det) {
       reverb.wet.rampTo(Math.min(1, char.reverbWet * mix.reverb), 0.15);
       delay.wet.rampTo(Math.min(1, char.delayWet * mix.delay), 0.15);
       if (leadDelayNode) leadDelayNode.wet.rampTo(Math.min(1, char.leadDelayWet * mix.delay), 0.15);
+      // DJ effects
+      phaser.wet.rampTo(mix.phaser || 0, 0.1);
+      flanger.wet.rampTo(mix.flanger || 0, 0.1);
+      tremolo.wet.rampTo(mix.tremolo || 0, 0.1);
+      crusher.wet.rampTo(mix.crush || 0, 0.1);
+      const fv = (mix.filter == null) ? 0.5 : mix.filter;   // DJ filter sweep
+      if (fv < 0.48) { djFilter.type = "lowpass"; djFilter.frequency.rampTo(200 + (fv / 0.48) * 17000, 0.1); }
+      else if (fv > 0.52) { djFilter.type = "highpass"; djFilter.frequency.rampTo(20 + ((fv - 0.52) / 0.48) * 4000, 0.1); }
+      else { djFilter.type = "lowpass"; djFilter.frequency.rampTo(20000, 0.1); }
     },
     /* A "movement": re-arrange the details while keeping the place's character.
        Called about once a minute so the piece never loops verbatim. */
@@ -965,12 +1009,25 @@ function travel(pos, title) {
   if (changed && state.engine) {
     fadeDispose(state.engine, 2.6);          // registry-tracked teardown of the old engine
     Tone.Transport.bpm.rampTo(nc.tempo, 2);
-    const eng = buildEngine(nc, makeDetails(nc));
+    state.det = makeDetails(nc);
+    const eng = buildEngine(applyPicks(nc), state.det);
     state.engine = eng;
     registerEngine(eng);
     eng.setMix(mix);
     eng.master.gain.rampTo(0.9, 3.2);
   }
+}
+
+/* Rebuild the current place with new dropdown picks, reusing the same details
+   (melody, voices) so only the chosen timbre/effect changes — a quick crossfade. */
+function rebuildEngine() {
+  if (!state.playing || !state.engine || !state.det) return;
+  fadeDispose(state.engine, 1.1);
+  const eng = buildEngine(applyPicks(state.char), state.det);
+  state.engine = eng;
+  registerEngine(eng);
+  eng.setMix(mix);
+  eng.master.gain.rampTo(0.95, 1.3);
 }
 
 /* ================================================================== */
@@ -1009,7 +1066,8 @@ $("circle").addEventListener("click", async () => {
     Tone.Transport.bpm.value = state.char.tempo;
     if (Tone.Transport.state !== "started") Tone.Transport.start();
     stopAll(0.2);                       // clear any straggler before starting fresh
-    const eng = buildEngine(state.char, makeDetails(state.char));
+    state.det = makeDetails(state.char);
+    const eng = buildEngine(applyPicks(state.char), state.det);
     state.engine = eng;
     registerEngine(eng);
     eng.setMix(mix);
@@ -1075,13 +1133,42 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".top")) $("results").classList.remove("open");
 });
 
-/* mixer — sliders adjust the live engine in real time */
-document.querySelectorAll("#mixer input[type=range]").forEach((sl) => {
-  sl.addEventListener("input", () => {
-    mix[sl.dataset.mix] = parseFloat(sl.value);
+/* mixer — build the DAW rack: a channel strip (dropdown + vertical fader) per
+   part, then DJ-effect faders. Faders adjust the live engine; dropdowns rebuild. */
+function makeFader(key, min, max, val) {
+  const f = document.createElement("input");
+  f.type = "range"; f.className = "fader"; f.dataset.mix = key;
+  f.min = min; f.max = max; f.step = 0.01; f.value = val;
+  f.setAttribute("aria-label", key);
+  f.addEventListener("input", () => {
+    mix[key] = parseFloat(f.value);
     if (state.engine && state.engine.setMix) state.engine.setMix(mix);
   });
-});
+  return f;
+}
+function buildMixer() {
+  const rack = $("rack");
+  const frag = document.createDocumentFragment();
+  CHANNELS.forEach((ch) => {
+    const strip = document.createElement("div"); strip.className = "strip";
+    const sel = document.createElement("select"); sel.className = "pick"; sel.setAttribute("aria-label", ch.key + " type");
+    ch.opts.forEach((o) => { const op = document.createElement("option"); op.value = o; op.textContent = o; sel.appendChild(op); });
+    sel.addEventListener("change", () => { picks[ch.key] = sel.value; rebuildEngine(); });
+    const lab = document.createElement("label"); lab.textContent = ch.key;
+    strip.append(sel, makeFader(ch.key, 0, 2, 1), lab);
+    frag.appendChild(strip);
+  });
+  const div = document.createElement("div"); div.className = "divider"; frag.appendChild(div);
+  FX_CHANNELS.forEach((key) => {
+    const strip = document.createElement("div"); strip.className = "strip fx";
+    const spacer = document.createElement("div"); spacer.className = "pickspacer";
+    const lab = document.createElement("label"); lab.textContent = key;
+    strip.append(spacer, makeFader(key, 0, 1, key === "filter" ? 0.5 : 0), lab);
+    frag.appendChild(strip);
+  });
+  rack.appendChild(frag);
+}
+buildMixer();
 
 /* ================================================================== */
 /* Boot                                                                */
