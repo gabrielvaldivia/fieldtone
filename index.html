@@ -23,14 +23,14 @@
     transition: background 2s ease;
     color: var(--ink);
     font-family: 'Space Grotesk', sans-serif;
-    display: flex; flex-direction: column; align-items: center;
+    display: grid; place-items: center;
     min-height: 100dvh;
-    padding: max(30px, env(safe-area-inset-top)) 20px max(22px, env(safe-area-inset-bottom));
+    padding: 0 20px;
     -webkit-tap-highlight-color: transparent;
   }
   .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.14em; text-transform: uppercase; }
   /* top — the location name IS the search field, with a locate button at its right */
-  .top { position: relative; width: min(560px, 100%); }
+  .top { position: fixed; top: max(28px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 40px)); z-index: 5; }
   .searchbar { position: relative; display: flex; align-items: center; border-bottom: 1px solid transparent; transition: border-color 0.4s; }
   .searchbar:focus-within { border-bottom-color: var(--line); }
   #q {
@@ -61,8 +61,8 @@
   #results button:hover, #results button:focus-visible { background: rgba(236,238,250,0.06); }
   #results button .sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-left: 10px; }
 
-  /* middle — the visual, centred in the open space */
-  .stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  /* middle — the visual, vertically centred in the viewport */
+  .stage { display: flex; flex-direction: column; align-items: center; justify-content: center; }
   #circle { position: relative; width: min(230px, 62vw); height: min(230px, 62vw); margin: 0 0 12px; background: transparent; border: none; cursor: pointer; }
   #circle .ring {
     position: absolute; border-radius: 50%; border: 1px solid var(--line);
@@ -75,13 +75,11 @@
   }
   body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
   #hint { font-size: 9px; color: var(--faint); }
-  #meta { font-size: 10px; color: var(--faint); margin-top: 6px; min-height: 13px; text-align: center; }
 
-  /* bottom — coordinates · time · weather */
-  .foot { margin-top: auto; padding-top: 30px; display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; }
-  #coords { font-size: 9px; letter-spacing: 0.2em; color: var(--faint); min-height: 12px; }
-  #weather { font-size: 9px; letter-spacing: 0.14em; color: var(--faint); min-height: 12px; }
-  #msg { font-size: 9px; color: var(--faint); min-height: 12px; margin-top: 2px; }
+  /* bottom — coordinates · time · weather, on one line */
+  .foot { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 40px)); display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+  #info { font-size: 9px; letter-spacing: 0.12em; color: var(--faint); min-height: 12px; }
+  #msg { font-size: 9px; color: var(--faint); min-height: 12px; }
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
   @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
   @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
@@ -103,12 +101,10 @@
       <span id="dot"></span>
     </button>
     <div id="hint" class="mono">tap to listen</div>
-    <div id="meta" class="mono"></div>
   </main>
 
   <footer class="foot">
-    <div id="coords" class="mono"></div>
-    <div id="weather" class="mono"></div>
+    <div id="info" class="mono"></div>
     <div id="msg" class="mono"></div>
   </footer>
 
@@ -227,11 +223,65 @@ const PALETTES = [
   { id: "velvet",  mood: "velvet",   bias: -4, vol: -13, atk: 2.4, len: 0.76, osc: { type: "fatsine" } },
 ];
 
-const KITS = ["pulse", "dub", "tickle", "tribal", "house", "broken"];
-
 /* Per-place colour effect inserted across the drone bus — a big multiplier on feel.
    "none" weighted twice so roughly a third of places stay uncoloured. */
 const FXS = ["none", "none", "chorus", "phaser", "tremolo", "vibrato", "autofilter", "chebyshev", "bitcrush"];
+
+/* Place archetypes — the biggest driver of "wildly different". Each reshapes the
+   whole arrangement: tempo, whether there's a beat, which drum kit, swing amount,
+   lo-fi grit, reverb size, how loud the drones sit, vinyl crackle, chord richness.
+   Weighted (w) toward lo-fi / beat-driven feels. */
+const ARCHETYPES = [
+  { id: "lofi",     w: 3, tempo: [68, 92],   beat: 1.0,  kit: "boombap", swing: [0.12, 0.24], lofi: [0.55, 0.95], verb: [1.4, 3.5], drone: 0.55, crackle: 0.85, seventh: 0.9 },
+  { id: "triphop",  w: 2, tempo: [78, 100],  beat: 0.95, kit: "boombap", swing: [0.06, 0.16], lofi: [0.40, 0.80], verb: [2.5, 6.0], drone: 0.60, crackle: 0.60, seventh: 0.7 },
+  { id: "jazzy",    w: 2, tempo: [76, 108],  beat: 0.85, kit: "brush",   swing: [0.14, 0.26], lofi: [0.30, 0.70], verb: [2.0, 4.5], drone: 0.50, crackle: 0.50, seventh: 0.95 },
+  { id: "dub",      w: 2, tempo: [68, 86],   beat: 0.80, kit: "dub",     swing: [0.05, 0.14], lofi: [0.30, 0.70], verb: [4.0, 9.0], drone: 0.70, crackle: 0.35, seventh: 0.5 },
+  { id: "house",    w: 1, tempo: [118, 126], beat: 1.0,  kit: "four",    swing: [0.03, 0.12], lofi: [0.10, 0.45], verb: [2.0, 4.5], drone: 0.45, crackle: 0.15, seventh: 0.55 },
+  { id: "techno",   w: 1, tempo: [124, 134], beat: 1.0,  kit: "four",    swing: [0.00, 0.05], lofi: [0.15, 0.50], verb: [1.8, 4.0], drone: 0.50, crackle: 0.10, seventh: 0.3 },
+  { id: "footwork", w: 1, tempo: [128, 152], beat: 1.0,  kit: "four",    swing: [0.00, 0.06], lofi: [0.20, 0.60], verb: [1.5, 4.0], drone: 0.40, crackle: 0.20, seventh: 0.4 },
+  { id: "cinematic",w: 1, tempo: [54, 80],   beat: 0.35, kit: "boombap", swing: [0.02, 0.10], lofi: [0.10, 0.50], verb: [6.0, 12],  drone: 0.90, crackle: 0.25, seventh: 0.6 },
+  { id: "ambient",  w: 2, tempo: [50, 78],   beat: 0.0,  kit: "none",    swing: [0.00, 0.02], lofi: [0.00, 0.35], verb: [6.0, 13],  drone: 1.00, crackle: 0.10, seventh: 0.4 },
+  { id: "drone",    w: 1, tempo: [44, 64],   beat: 0.0,  kit: "none",    swing: [0.00, 0.02], lofi: [0.00, 0.40], verb: [7.0, 13],  drone: 1.00, crackle: 0.10, seventh: 0.3 },
+];
+const ARCH_POOL = ARCHETYPES.flatMap((a) => Array(a.w).fill(a));
+const rangePick = (rng, a) => a[0] + rng() * (a[1] - a[0]);
+
+/* Procedural scale — a subset of the 12 chromatic notes, seeded per place, so
+   there are thousands of possibilities. Anchors (root, fifth, fourth, thirds…)
+   are likely, keeping it musical, but the remainder is wide open. */
+function genScale(rng) {
+  const size = 5 + Math.floor(rng() * 4);              // 5–8 notes
+  const set = new Set([0]);                            // root always present
+  const anchors = [7, 5, 4, 3, 9, 10, 2];
+  for (const a of anchors) { if (set.size < size && rng() < 0.5) set.add(a); }
+  while (set.size < size) set.add(1 + Math.floor(rng() * 11));
+  return { ints: Array.from(set).sort((a, b) => a - b) };
+}
+
+/* A 16-step kit pattern (kick / snare / hat), with per-place variation. */
+function genDrums(kit, rng) {
+  const K = Array(16).fill(0), S = Array(16).fill(0), H = Array(16).fill(0);
+  if (kit === "boombap") {                              // lo-fi hip-hop: backbeat + syncopated kick
+    K[0] = 1; if (rng() < 0.6) K[10] = 1; if (rng() < 0.5) K[7] = 1; if (rng() < 0.35) K[3] = 1; if (rng() < 0.3) K[14] = 1;
+    S[4] = 1; S[12] = 1;
+    for (let i = 0; i < 16; i += 2) H[i] = 1;
+    if (rng() < 0.5) for (let i = 3; i < 16; i += 4) H[i] = 1;
+  } else if (kit === "four") {                          // four-on-the-floor
+    K[0] = K[4] = K[8] = K[12] = 1;
+    S[4] = S[12] = 1;
+    for (let i = 2; i < 16; i += 4) H[i] = 1;
+    if (rng() < 0.6) for (let i = 0; i < 16; i += 2) H[i] = 1;
+  } else if (kit === "dub") {                           // sparse, half-time snare
+    K[0] = 1; if (rng() < 0.5) K[10] = 1;
+    S[8] = 1;
+    if (rng() < 0.6) H[6] = 1; if (rng() < 0.6) H[14] = 1;
+  } else if (kit === "brush") {                         // jazzy, snare on the backbeat, steady ride
+    K[0] = 1; if (rng() < 0.6) K[8] = 1; if (rng() < 0.3) K[11] = 1;
+    S[4] = S[12] = 1;
+    for (let i = 0; i < 16; i += 2) H[i] = 1;
+  }
+  return { K, S, H };
+}
 
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
@@ -240,16 +290,22 @@ function makeCharacter(lat, lng) {
   const c = cellOf(lat, lng);
   const key = c.lat.toFixed(3) + "," + c.lng.toFixed(3);
   const rng = mulberry32(hashStr(key));
-  const scale = SCALES[Math.floor(rng() * SCALES.length)];
+  const archetype = ARCH_POOL[Math.floor(rng() * ARCH_POOL.length)];
+  const scale = genScale(rng);                               // one of thousands
   const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
   const root = 41 + Math.floor(rng() * 12) + palette.bias;   // register bias per palette
-  const r = rng();
-  const rhythm = r < 0.28 ? 0 : 0.3 + rng() * 0.7;
-  const tempo = 40 + Math.floor(rng() * 84);                 // 40–123, techno to dirge
+  const tempo = Math.round(rangePick(rng, archetype.tempo));
+  const beat = archetype.beat;                               // beat presence/level from the archetype
+  const rhythm = beat;                                       // drives the grooving dot in the UI
   const voices = 2 + Math.floor(rng() * 6);                  // 2–7
+  const lofi = rangePick(rng, archetype.lofi);               // grit / dust amount
+  const crackle = Math.min(1, archetype.crackle * (0.5 + rng()));
+  const droneLevel = archetype.drone;                        // how loud the ambient bed sits
+  const kit = archetype.kit;
+  const drums = genDrums(kit, rng);
 
-  // the "space" — this is what makes an intimate room feel unlike a cathedral
-  const reverbDecay = 2.6 + rng() * 10.5;                    // 2.6–13 s
+  // the "space" — the archetype sets the room, from intimate to cathedral
+  const reverbDecay = rangePick(rng, archetype.verb);
   const reverbWet = 0.38 + rng() * 0.3;
   const delayTime = 0.16 + rng() * 0.42;
   const delayFb = 0.18 + rng() * 0.38;
@@ -292,7 +348,7 @@ function makeCharacter(lat, lng) {
   const bassWave = ["sine", "triangle", "sawtooth", "square"][Math.floor(rng() * 4)];
 
   // ---- song layer: a chord progression, and a melody that follows it ----
-  const seventh = rng() < 0.4;                               // triads vs 7th-chord colour
+  const seventh = rng() < archetype.seventh;                 // jazzier archetypes use 7th chords
   const progLen = [1, 2, 2, 3, 3, 4, 4][Math.floor(rng() * 7)];
   const progression = [0];                                   // always open on the tonic
   for (let i = 1; i < progLen; i++) {
@@ -332,18 +388,13 @@ function makeCharacter(lat, lng) {
   const bassVerb = 0.08 + rng() * 0.26;
 
   // rhythm identity
-  const kit = KITS[Math.floor(rng() * KITS.length)];
-  const kickSteps = [8, 12, 16][Math.floor(rng() * 3)];
-  const kickHits = 1 + Math.floor(rng() * 3);
-  const hatSteps = [9, 11, 13, 16][Math.floor(rng() * 4)];
-  const hatHits = 3 + Math.floor(rng() * Math.max(1, Math.floor(hatSteps / 2) - 1));
-  const bellSteps = [7, 10, 13][Math.floor(rng() * 3)];
   const kickNote = 33 + Math.floor(rng() * 5);               // stable low thump, not root-following
   const air = 0.03 + rng() * 0.09;
   const airHz = 300 + rng() * 900;
-  const swing = rng() * 0.06;
+  const swing = rangePick(rng, archetype.swing);
 
   return { key, scale, palette, root, rhythm, tempo, voices,
+    archetype, beat, lofi, crackle, droneLevel,
     reverbDecay, reverbWet, delayTime, delayFb, delayWet, brightBias, detune,
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
@@ -351,7 +402,7 @@ function makeCharacter(lat, lng) {
     seventh, progression, chordSteps, leadOct, padOct, leadWave, cell,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     bassHits, bassStyle, bassVerb,
-    kit, kickSteps, kickHits, hatSteps, hatHits, bellSteps, kickNote, air, airHz, swing };
+    kit, drums, kickNote, air, airHz, swing };
 }
 
 function makeDetails(char) {
@@ -367,12 +418,7 @@ function makeDetails(char) {
       pan: (rng() * 2 - 1) * 0.6,
     });
   }
-  return {
-    voices,
-    kickRot: Math.floor(rng() * char.kickSteps),
-    hatRot: Math.floor(rng() * char.hatSteps),
-    bellRot: Math.floor(rng() * char.bellSteps),
-  };
+  return { voices };
 }
 
 const dayness = (h) => 0.5 - 0.5 * Math.cos((h / 24) * Math.PI * 2);
@@ -388,7 +434,7 @@ const state = {
   engines: [],                 // every live engine, so stop can dispose them all
   playing: false,
   tzOffsetSec: null,           // from weather API; falls back to longitude estimate
-  weather: { rain: 0, wind: 0.1, temp: 16, desc: "" },
+  weather: { rain: 0, wind: 0.1, temp: 16, desc: "", windKmh: 0 },
 };
 state.char = makeCharacter(state.center.lat, state.center.lng);
 const params = { density: 0.75, rain: 0, wind: 0.1 };
@@ -476,21 +522,25 @@ function buildEngine(char, det) {
   const harmony = { tones: [0] };// current chord's tones, read by the bassline
   let leadVerbNode = null;       // lead reverb send, modulated by time of day
 
-  // master chain ends in a limiter so driven / dense / bit-crushed places
-  // can push hard without clipping, while clean places pass through untouched
+  // master chain ends in a limiter so driven / dense / bit-crushed places can push
+  // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
   const out = track(new Tone.Limiter(-1).toDestination());
   const master = track(new Tone.Gain(0).connect(out));
-  const filter = track(new Tone.Filter(1400, "lowpass").connect(master));
+  const wow = char.lofi > 0.25
+    ? track(new Tone.Vibrato(4 + char.lofi * 3, Math.min(0.06, char.lofi * 0.04)).connect(master))
+    : null;
+  const filter = track(new Tone.Filter(1400, "lowpass").connect(wow || master));
   const reverb = track(new Tone.Reverb({ decay: char.reverbDecay, wet: char.reverbWet }).connect(filter));
   const delay = track(new Tone.FeedbackDelay(char.delayTime, char.delayFb).connect(reverb));
   delay.wet.value = char.delayWet;
 
-  // drone bus: voices → [colour fx] → [drive/distortion] → delay
+  // drone bus: voices → [colour fx] → [drive] → droneGain (archetype level) → delay
+  const droneGain = track(new Tone.Gain(char.droneLevel).connect(delay));
   const drive = char.drive > 0.05
     ? track(new Tone.Distortion({ distortion: char.drive * 0.7, wet: 0.3 + char.drive * 0.5 }))
     : null;
-  if (drive) drive.connect(delay);
-  const busTail = drive || delay;
+  if (drive) drive.connect(droneGain);
+  const busTail = drive || droneGain;
   const color = makeFX(char, track);
   if (color) color.connect(busTail);
   const voiceDest = color || busTail;
@@ -639,85 +689,73 @@ function buildEngine(char, det) {
   windLfo.start();
   windGain.gain.rampTo(char.air + params.wind * 0.1, 5);
 
-  if (char.rhythm > 0) {
-    /* drums get their OWN short reverb so beats stay defined instead of
-       drowning in the drone's long tail */
-    const drumBus = track(new Tone.Gain(char.rhythm * 0.9).connect(filter));
-    const drumVerb = track(new Tone.Reverb({ decay: 1.5 + char.rhythm * 1.4, wet: 1 }).connect(filter));
-    const drumSend = track(new Tone.Gain(0.26 + char.rhythm * 0.14).connect(drumVerb));
+  if (char.beat > 0 && char.kit !== "none") {
+    /* Lo-fi drum bus: punchy and DRY, run through a bit-crusher and a high
+       roll-off so it sounds like dusty sampled drums. Lo-fi amount decides how
+       crushed and dark. A small dedicated reverb keeps beats defined. */
+    const drumOut = track(new Tone.Gain(0.95 * char.beat).connect(filter));
+    const crush = track(new Tone.BitCrusher(Math.round(4 + (1 - char.lofi) * 8)).connect(drumOut));
+    crush.wet.value = 0.3 + char.lofi * 0.6;
+    const drumLP = track(new Tone.Filter(2200 + (1 - char.lofi) * 8800, "lowpass").connect(crush));
+    const drumBus = track(new Tone.Gain(1).connect(drumLP));
+    const drumVerb = track(new Tone.Reverb({ decay: 1.1 + char.beat * 1.1, wet: 1 }).connect(drumOut));
+    const drumSend = track(new Tone.Gain(0.1 + (1 - char.lofi) * 0.16).connect(drumVerb));
     drumBus.connect(drumSend);
 
     const kick = track(new Tone.MembraneSynth({
-      pitchDecay: 0.028, octaves: 4, oscillator: { type: "sine" },
-      envelope: { attack: 0.001, decay: 0.34, sustain: 0 }, volume: -7,
+      pitchDecay: 0.03 + char.lofi * 0.02, octaves: 4, oscillator: { type: "sine" },
+      envelope: { attack: 0.001, decay: 0.33 - char.lofi * 0.07, sustain: 0 }, volume: -5,
     }).connect(drumBus));
-    const hatHP = track(new Tone.Filter(6500, "highpass").connect(drumBus));
+    // snare = a filtered noise burst + a short tuned body, together
+    const snareBP = track(new Tone.Filter(1800, "bandpass").connect(drumBus));
+    snareBP.Q.value = 0.8;
+    const snareNoise = track(new Tone.NoiseSynth({
+      noise: { type: char.lofi > 0.5 ? "pink" : "white" },
+      envelope: { attack: 0.001, decay: 0.13 - char.lofi * 0.03, sustain: 0 }, volume: -13,
+    }).connect(snareBP));
+    const snareBody = track(new Tone.Synth({
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.001, decay: 0.12, sustain: 0 }, volume: -17,
+    }).connect(drumBus));
+    const hatHP = track(new Tone.Filter(7500 - char.lofi * 3200, "highpass").connect(drumBus));
     const hat = track(new Tone.NoiseSynth({
-      noise: { type: char.kit === "tickle" ? "pink" : "white" },
-      envelope: { attack: 0.001, decay: 0.03, sustain: 0 }, volume: -22,
+      noise: { type: char.lofi > 0.5 ? "pink" : "white" },
+      envelope: { attack: 0.001, decay: 0.03, sustain: 0 }, volume: -23,
     }).connect(hatHP));
-    const bell = track(new Tone.FMSynth({
-      harmonicity: 5.1, modulationIndex: 12,
-      envelope: { attack: 0.002, decay: 1.3, sustain: 0 }, volume: -20,
-    }).connect(drumBus));
-    bell.connect(drumSend);
-    const rim = track(new Tone.MembraneSynth({
-      pitchDecay: 0.008, octaves: 2,
-      envelope: { attack: 0.001, decay: 0.09, sustain: 0 }, volume: -13,
-    }).connect(drumBus));
 
-    const kickPat = euclid(char.kickHits, char.kickSteps, det.kickRot);
-    const hatPat = euclid(char.hatHits, char.hatSteps, det.hatRot);
-    const bellPat = euclid(2, char.bellSteps, det.bellRot);
-    const bellHit = (t) => {
-      const deg = char.scale.ints[Math.floor(Math.random() * char.scale.ints.length)];
-      bell.triggerAttackRelease(Tone.Frequency(char.root + 24 + deg + chord.offset, "midi"), "8n", t, 0.6);
-    };
+    const D = char.drums;
     const kf = Tone.Frequency(char.kickNote, "midi");
+    const snareBodyF = Tone.Frequency(char.kickNote + 19, "midi");
     let step = 0;
     const rloop = new Tone.Loop((time) => {
+      const s = step % 16;
       const sixteenth = (60 / Tone.Transport.bpm.value) / 4;
-      const t = time + (step % 2 === 1 ? char.swing * sixteenth * 2 : 0);
-      const pres = 0.6 + params.density * 0.4;            // time-of-day intensity, never kills the pulse
-      const k = kickPat[step % kickPat.length];
-      const h = hatPat[step % hatPat.length];
-      const bl = bellPat[step % bellPat.length];
-
-      if (char.kit === "tribal") {                         // toms + rim polyrhythm, no hats
-        if (k) kick.triggerAttackRelease(kf, "8n", t, 0.9);
-        if (h) rim.triggerAttackRelease(Tone.Frequency(char.kickNote + 7, "midi"), "16n", t, 0.4 + Math.random() * 0.4);
-        if (bl && Math.random() < 0.5 * pres) bellHit(t);
-      } else if (char.kit === "dub") {                     // sparse, spacious, offbeat hats
-        if (k && step % (char.kickSteps > 8 ? 2 : 1) === 0) kick.triggerAttackRelease(kf, "8n", t, 1);
-        if (h && step % 2 === 1 && Math.random() < 0.6 * pres) hat.triggerAttackRelease("16n", t, 0.5);
-        if (bl && Math.random() < 0.4 * pres) bellHit(t);
-      } else if (char.kit === "tickle") {                  // ticks + bells, barely-there kick
-        if (h && Math.random() < 0.8 * pres) hat.triggerAttackRelease("32n", t, 0.4 + Math.random() * 0.4);
-        if (k && Math.random() < 0.3) kick.triggerAttackRelease(kf, "8n", t, 0.5);
-        if (bl && Math.random() < 0.55 * pres) bellHit(t);
-      } else if (char.kit === "house") {                   // four-on-the-floor + offbeat hats
-        if (step % 4 === 0) kick.triggerAttackRelease(kf, "8n", t, 0.95);
-        if (step % 4 === 2 && Math.random() < 0.85 * pres) hat.triggerAttackRelease("16n", t, 0.5 + Math.random() * 0.3);
-        if (h && step % 2 === 1 && Math.random() < 0.4 * pres) hat.triggerAttackRelease("32n", t, 0.3);
-        if (bl && Math.random() < 0.3 * pres) bellHit(t);
-      } else if (char.kit === "broken") {                  // syncopated, ghost-note breakbeat
-        if (k && Math.random() < 0.85) kick.triggerAttackRelease(kf, "8n", t, 0.9);
-        if (h && Math.random() < 0.75 * pres) hat.triggerAttackRelease("16n", t, 0.3 + Math.random() * 0.5);
-        if (!k && step % 4 === 2 && Math.random() < 0.5) rim.triggerAttackRelease(Tone.Frequency(char.kickNote + 12, "midi"), "16n", t, 0.5);
-        if (bl && Math.random() < 0.4 * pres) bellHit(t);
-      } else {                                             // pulse — steady, reliable groove
-        if (k && Math.random() < 0.92) kick.triggerAttackRelease(kf, "8n", t, 0.9);
-        if (h && Math.random() < 0.7 * pres + params.rain * 0.3) hat.triggerAttackRelease("16n", t, 0.5 + Math.random() * 0.3);
-        if (bl && Math.random() < 0.4 * pres) bellHit(t);
+      const t = time + (s % 2 === 1 ? char.swing * sixteenth * 2 : 0);   // swing the off-16ths
+      const dens = 0.72 + params.density * 0.28;
+      if (D.K[s]) kick.triggerAttackRelease(kf, "8n", t, 0.82 + Math.random() * 0.18);
+      if (D.S[s]) {
+        snareNoise.triggerAttackRelease("8n", t, 0.7 + Math.random() * 0.2);
+        snareBody.triggerAttackRelease(snareBodyF, "16n", t, 0.5);
+      }
+      if (D.H[s] && Math.random() < dens) {
+        hat.triggerAttackRelease("16n", t, (s % 4 === 0 ? 0.5 : 0.28) + Math.random() * 0.22);
       }
       step++;
     }, "16n");
     rloop.start(0);
     loops.push(rloop);
+
+    // vinyl / tape surface noise for lo-fi places
+    if (char.crackle > 0.05) {
+      const crackHP = track(new Tone.Filter(2600, "highpass").connect(drumOut));
+      const surface = track(new Tone.Noise("brown").connect(crackHP));
+      surface.volume.value = -52 + char.crackle * 24;   // ~ -52..-28 dB
+      surface.start();
+    }
   }
 
   return {
-    master, filter, windGain, air: char.air, brightBias: char.brightBias,
+    master, filter, windGain, air: char.air, brightBias: char.brightBias, lofi: char.lofi,
     leadVerb: leadVerbNode, leadVerbBase: char.leadVerbAmt,
     dispose() {
       loops.forEach((l) => { try { l.dispose(); } catch (e) {} });
@@ -755,15 +793,25 @@ function applyConditions() {
   params.wind = state.weather.wind;
   const e = state.engine;
   if (e) {
-    e.filter.frequency.rampTo(Math.min(9000, (360 + d * 2200 + (state.weather.temp - 10) * 20) * e.brightBias), 2);
+    e.filter.frequency.rampTo(Math.min(9000, (360 + d * 2200 + (state.weather.temp - 10) * 20) * e.brightBias) * (1 - (e.lofi || 0) * 0.4), 2);
     e.windGain.gain.rampTo(e.air + state.weather.wind * 0.1, 3);
     // lead washes further into reverb at night, pulls forward a touch by day
     if (e.leadVerb) e.leadVerb.gain.rampTo(e.leadVerbBase * (0.7 + (1 - d) * 0.7), 3);
   }
   applySky(hour);
-  const hh = Math.floor(hour), mm = Math.floor((hour - hh) * 60);
+  renderInfo();
+}
+
+/* coordinates · time · weather, all on one line */
+function renderInfo() {
+  const hour = localHour();
+  const hh = String(Math.floor(hour)).padStart(2, "0");
+  const mm = String(Math.floor((hour - Math.floor(hour)) * 60)).padStart(2, "0");
   const cl = cellOf(state.center.lat, state.center.lng);
-  $("coords").textContent = `${cl.lat.toFixed(3)}°  ${cl.lng.toFixed(3)}°  ·  local ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  const w = state.weather;
+  let s = `${cl.lat.toFixed(3)}° ${cl.lng.toFixed(3)}° · ${hh}:${mm}`;
+  if (w.desc) s += ` · ${Math.round(w.temp)}°C · ${w.desc} · wind ${Math.round(w.windKmh || 0)} km/h`;
+  $("info").textContent = s;
 }
 
 /* ================================================================== */
@@ -783,9 +831,9 @@ async function fetchWeather() {
       temp: c.temperature_2m,
       rain: Math.min((c.precipitation || 0) / 3, 1) * (snowish ? 0.5 : 1),
       wind: Math.min((c.wind_speed_10m || 0) / 40, 1),
+      windKmh: c.wind_speed_10m || 0,
       desc: WCODE[c.weather_code] || "",
     };
-    $("weather").textContent = `${Math.round(c.temperature_2m)}°C · ${state.weather.desc} · wind ${Math.round(c.wind_speed_10m)} km/h`;
     applyConditions();
   } catch (e) { /* offline is fine — the sound still plays */ }
 }
@@ -813,8 +861,6 @@ function setLocationName(name) {
 
 function renderCharacter() {
   const c = state.char;
-  const label = c.rhythm === 0 ? "pure drone" : c.rhythm < 0.55 ? "faint pulse" : "steady groove";
-  $("meta").textContent = `${c.palette.mood} · ${c.scale.name} · ${label}` + (c.rhythm > 0 ? ` · ${c.tempo} bpm` : "");
   setLocationName(state.title);
   const rings = $("rings");
   rings.innerHTML = "";
