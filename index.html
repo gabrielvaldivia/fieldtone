@@ -334,6 +334,23 @@ function genDrums(kit, rng) {
   return { K, S, H };
 }
 
+/* Lead instruments — the melody's voice. Wildly different synth engines so the
+   tune itself sounds like a different instrument in every place. */
+const LEAD_KINDS = [
+  { id: "pluck",  vol: -15, attackOnly: true, build: () => new Tone.PluckSynth({ attackNoise: 1, dampening: 2600, resonance: 0.9 }) },
+  { id: "koto",   vol: -15, attackOnly: true, build: () => new Tone.PluckSynth({ attackNoise: 0.6, dampening: 1600, resonance: 0.94 }) },
+  { id: "bell",   vol: -18, build: () => new Tone.FMSynth({ harmonicity: 3.01, modulationIndex: 8, envelope: { attack: 0.004, decay: 1.4, sustain: 0, release: 1.6 }, modulationEnvelope: { attack: 0.004, decay: 0.4, sustain: 0, release: 0.6 } }) },
+  { id: "rhodes", vol: -15, build: () => new Tone.FMSynth({ harmonicity: 1, modulationIndex: 3.5, envelope: { attack: 0.004, decay: 0.9, sustain: 0.15, release: 1 }, modulationEnvelope: { attack: 0.004, decay: 0.7, sustain: 0.1, release: 0.7 } }) },
+  { id: "synth",  vol: -20, build: () => new Tone.MonoSynth({ oscillator: { type: "sawtooth" }, filter: { Q: 2, type: "lowpass", rolloff: -24 }, filterEnvelope: { attack: 0.02, decay: 0.3, sustain: 0.35, release: 0.8, baseFrequency: 350, octaves: 3 }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 0.7 } }) },
+  { id: "square", vol: -22, build: () => new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.3, sustain: 0.3, release: 0.5 } }) },
+  { id: "soft",   vol: -17, build: () => new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.04, decay: 0.4, sustain: 0.4, release: 1.3 } }) },
+  { id: "glass",  vol: -19, build: () => new Tone.Synth({ oscillator: { type: "fmsine" }, envelope: { attack: 0.02, decay: 0.5, sustain: 0.3, release: 1.4 } }) },
+  { id: "chime",  vol: -25, attackOnly: true, build: () => new Tone.MetalSynth({ harmonicity: 3.4, modulationIndex: 16, resonance: 1400, octaves: 1, envelope: { attack: 0.002, decay: 0.7, release: 0.6 } }) },
+  { id: "pwm",    vol: -21, build: () => new Tone.Synth({ oscillator: { type: "pwm", modulationFrequency: 0.5 }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.35, release: 0.7 } }) },
+  { id: "reed",   vol: -19, build: () => new Tone.AMSynth({ harmonicity: 2, envelope: { attack: 0.03, decay: 0.4, sustain: 0.4, release: 0.9 } }) },
+  { id: "duo",    vol: -22, build: () => new Tone.DuoSynth({ harmonicity: 1.5, vibratoAmount: 0.08, vibratoRate: 4, voice0: { oscillator: { type: "triangle" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } }, voice1: { oscillator: { type: "sine" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } } }) },
+];
+
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
 
@@ -351,9 +368,16 @@ function makeCharacter(lat, lng) {
   const voices = 2 + Math.floor(rng() * 5);                  // 2–6
   const lofi = rangePick(rng, archetype.lofi);               // grit / dust amount
   const crackle = Math.min(1, archetype.crackle * (0.5 + rng()));
-  const droneLevel = archetype.drone;                        // how loud the ambient bed sits
   const kit = archetype.kit;
   const drums = genDrums(kit, rng);
+
+  // arrangement — NOT every place is a drone. Beat-driven places are usually just
+  // melody + rhythm; the ambient/drone archetypes keep their wash. Chords come and go.
+  const beaty = archetype.beat > 0;
+  const hasDrone = beaty ? (rng() < 0.4) : true;
+  const hasPad = rng() < (hasDrone ? 0.65 : 0.85);
+  const droneLevel = hasDrone ? archetype.drone : 0;
+  const leadKind = LEAD_KINDS[Math.floor(rng() * LEAD_KINDS.length)];   // the melody's instrument
 
   // the "space" — the archetype sets the room, from intimate to cathedral
   const reverbDecay = rangePick(rng, archetype.verb);
@@ -410,7 +434,6 @@ function makeCharacter(lat, lng) {
   const chordSteps = [8, 8, 12, 16][Math.floor(rng() * 4)];  // eighth-notes each chord holds (1–2 bars)
   const leadOct = 1 + Math.floor(rng() * 2);                 // melody register above the root
   const padOct = 0;
-  const leadWave = ["triangle", "sine", "square", "sawtooth", "fmsine", "pwm"][Math.floor(rng() * 6)];
   const melodyRest = 0.55 + rng() * 0.32;                    // sparse baseline; the arc adds notes at its climax
   const melodyArc = genMelodyArc(seventh, chordSteps, progression.length, melodyRest, rng);
 
@@ -434,12 +457,12 @@ function makeCharacter(lat, lng) {
   const swing = rangePick(rng, archetype.swing);
 
   return { key, scale, palette, root, rhythm, tempo, voices,
-    archetype, beat, lofi, crackle, droneLevel,
+    archetype, beat, lofi, crackle, droneLevel, hasDrone, hasPad, leadKind,
     reverbDecay, reverbWet, delayTime, delayFb, delayWet, brightBias, detune,
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
-    seventh, progression, chordSteps, leadOct, padOct, leadWave, melodyArc, melodyRest,
+    seventh, progression, chordSteps, leadOct, padOct, melodyArc, melodyRest,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     bassHits, bassStyle, bassVerb,
     kit, drums, kickNote, air, airHz, swing };
@@ -485,7 +508,8 @@ const mix = { melody: 1, chords: 1, bass: 1, beat: 1, drone: 1, reverb: 1, delay
 const picks = { melody: "auto", chords: "auto", bass: "auto", beat: "auto", drone: "auto", reverb: "auto", delay: "auto" };
 
 const PALETTE_BY_ID = Object.fromEntries(PALETTES.map((p) => [p.id, p]));
-const LEAD_TYPES  = ["auto", "sine", "triangle", "square", "sawtooth", "fmsine", "fmtriangle", "fmsquare", "amsine", "pwm", "pulse", "fatsawtooth"];
+const LEAD_KIND_BY_ID = Object.fromEntries(LEAD_KINDS.map((k) => [k.id, k]));
+const LEAD_TYPES  = ["auto", ...LEAD_KINDS.map((k) => k.id)];
 const PAD_TYPES   = ["auto", "triangle", "sine", "sawtooth", "square", "fatsine", "fattriangle", "fatsawtooth", "amsine", "pwm"];
 const BASS_TYPES  = ["auto", "sine", "triangle", "sawtooth", "square", "pulse", "fmsquare"];
 const KIT_TYPES   = ["auto", "808", "acoustic", "vinyl", "tape", "clean", "trap", "none"];
@@ -510,7 +534,7 @@ const FX_CHANNELS = ["filter", "echo", "space"];
 /* Fold the user's dropdown picks onto a copy of the character. */
 function applyPicks(char) {
   const c = Object.assign({}, char);
-  if (picks.melody !== "auto") c.leadWave = picks.melody;
+  if (picks.melody !== "auto" && LEAD_KIND_BY_ID[picks.melody]) c.leadKind = LEAD_KIND_BY_ID[picks.melody];
   if (picks.chords !== "auto") c.padType = picks.chords;
   if (picks.bass !== "auto") c.bassWave = picks.bass;
   if (picks.beat === "none") {
@@ -602,6 +626,14 @@ function makeFX(char, track) {
   }
 }
 
+/* Build the lead (melody) instrument for this place and return a play() fn. */
+function makeLead(char, dest, track) {
+  const K = char.leadKind || LEAD_KINDS[0];
+  const synth = track(K.build().connect(dest));
+  try { synth.volume.value = K.vol; } catch (e) {}
+  return (freq, dur, time) => K.attackOnly ? synth.triggerAttack(freq, time) : synth.triggerAttackRelease(freq, dur, time);
+}
+
 function buildEngine(char, det) {
   const nodes = [];
   const loops = [];
@@ -645,7 +677,8 @@ function buildEngine(char, det) {
 
   const trigProb = () => Math.max(0.05, Math.min(0.6, 0.08 + char.activity * 0.4 + params.density * 0.22));
 
-  det.voices.forEach((v) => {
+  // the drone wash is now optional — many places are just melody + rhythm
+  if (char.hasDrone) det.voices.forEach((v) => {
     const play = makeVoice(char, v, voiceDest, track);
     const loop = new Tone.Loop((time) => {
       if (Math.random() > trigProb()) return;
@@ -664,13 +697,17 @@ function buildEngine(char, det) {
      always move together. The chord root also drives the drones + bass. */
   {
     const eighth = () => (60 / Tone.Transport.bpm.value) / 2;
-    const padGain = track(new Tone.Gain(1).connect(reverb));
-    padGainNode = padGain;
-    const pad = track(new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: char.padType || "triangle" },
-      envelope: { attack: 0.8, decay: 1.8, sustain: 0.6, release: 3 },
-      volume: -22,
-    }).connect(padGain));
+    // chords are optional too; when present a soft pad states each chord
+    let pad = null;
+    if (char.hasPad) {
+      const padGain = track(new Tone.Gain(1).connect(reverb));
+      padGainNode = padGain;
+      pad = track(new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: char.padType || "triangle" },
+        envelope: { attack: 0.8, decay: 1.8, sustain: 0.6, release: 3 },
+        volume: -22,
+      }).connect(padGain));
+    }
 
     // lead lives inside the space: its own delay → shared reverb, a reverb send,
     // and only a whisper of dry signal so it blends rather than sits on top
@@ -684,11 +721,7 @@ function buildEngine(char, det) {
     const leadGain = track(new Tone.Gain(1));
     leadGainNode = leadGain;
     leadGain.connect(leadDelay); leadGain.connect(leadVerb); leadGain.connect(leadDry);
-    const lead = track(new Tone.Synth({
-      oscillator: { type: char.leadWave },
-      envelope: { attack: 0.06, decay: 0.4, sustain: 0.4, release: 1.6 },
-      volume: -22,
-    }).connect(leadGain));
+    const playLead = makeLead(char, leadGain, track);   // the melody's instrument varies per place
 
     const CS = char.chordSteps;
     let ladder = null, m = 0, hold = 0, arcSeed = 0;
@@ -709,12 +742,14 @@ function buildEngine(char, det) {
         chord.offset = tones[0];               // drones + bass follow the changes
         harmony.tones = tones;
         ladder = tones.concat(tones.map((t) => t + 12)).sort((a, b) => a - b);   // 2-octave chord-tone ladder
-        const freqs = tones.map((t) => {
-          let pm = char.root + t + 12 * char.padOct;
-          while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
-          return Tone.Frequency(pm, "midi").toFrequency();
-        });
-        pad.triggerAttackRelease(freqs, eighth() * CS * 1.02, time);
+        if (pad) {
+          const freqs = tones.map((t) => {
+            let pm = char.root + t + 12 * char.padOct;
+            while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
+            return Tone.Frequency(pm, "midi").toFrequency();
+          });
+          pad.triggerAttackRelease(freqs, eighth() * CS * 1.02, time);
+        }
       }
       const cs = songArc.phrases[pIdx][posInPhrase];
       if (hold > 0) { hold--; m++; return; }   // let long notes ring
@@ -722,7 +757,7 @@ function buildEngine(char, det) {
         const t = ladder[Math.max(0, Math.min(ladder.length - 1, cs.step))];
         let midi = char.root + t + 12 * char.leadOct;
         while (midi > 84) midi -= 12; while (midi < 52) midi += 12;   // keep the lead in a musical range
-        lead.triggerAttackRelease(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.95, time);
+        playLead(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.95, time);
         hold = cs.dur - 1;
       }
       m++;
