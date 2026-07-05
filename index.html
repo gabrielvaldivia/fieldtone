@@ -521,24 +521,26 @@ const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.ro
 function makeCharacter(lat, lng) {
   const c = cellOf(lat, lng);
   const key = c.lat.toFixed(3) + "," + c.lng.toFixed(3);
-  const rng = mulberry32(hashStr(key));
+  const rng = mulberry32(hashStr(key));                      // CHARACTER tier: fixed per place
+  const srng = mulberry32(hashStr(key + "|" + SESSION_SEED));// PERFORMANCE tier: new every visit
   const genre = genreOf(c.lat, c.lng);                       // GEOGRAPHY picks the genre
   const G = GENRES[genre];
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+  const spick = (arr) => arr[Math.floor(srng() * arr.length)];
   // scale: genre-appropriate, with an occasional wildcard for surprise
   const scale = { ints: (rng() < 0.12 ? genScale(rng).ints : SC[pick(G.scales)]) };
   const L = scale.ints.length;
   const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
   const root = 41 + Math.floor(rng() * 12) + palette.bias;   // register bias per palette
-  const tempo = Math.round(rangePick(rng, G.tempo));
+  const tempo = Math.round(rangePick(srng, G.tempo));        // this visit's tempo
   const beat = G.beat;                                       // beat presence/level from the genre
   const rhythm = beat;                                       // drives the grooving dot in the UI
   const voices = 2 + Math.floor(rng() * 5);                  // 2–6
   const lofi = rangePick(rng, G.lofi);                       // grit / dust amount
   const crackle = Math.min(1, G.crackle * (0.5 + rng()));
   const kit = G.kit;
-  const drums = genDrums(kit, rng);
-  const drumKit = pick(G.drums);                             // default drum SOUND fits the genre
+  const drums = genDrums(kit, srng);                         // this visit's groove
+  const drumKit = spick(G.drums);                            // this visit's drum sound
 
   // arrangement — NOT every place is a drone; the genre decides how likely a wash is
   const hasDrone = rng() < G.droneChance;
@@ -591,27 +593,28 @@ function makeCharacter(lat, lng) {
   const bassWave = ["sine", "triangle", "sawtooth", "square"][Math.floor(rng() * 4)];
 
   // ---- song layer: a FAMOUS chord progression, and a melody that follows it ----
-  const seventh = rng() < G.seventh;                         // jazzier genres use 7th chords
+  // (all PERFORMANCE tier — a fresh song on the same instruments every visit)
+  const seventh = srng() < G.seventh;                        // jazzier genres use 7th chords
   const progKeys = GENRE_PROGS[genre] || ["pop1"];
-  const progression = PROGS[pick(progKeys)].map((d) => ((d % L) + L) % L);   // mapped into this scale
-  const chordSteps = progression.length >= 6 ? 8 : [8, 8, 12, 16][Math.floor(rng() * 4)];
+  const progression = PROGS[spick(progKeys)].map((d) => ((d % L) + L) % L);   // mapped into this scale
+  const chordSteps = progression.length >= 6 ? 8 : [8, 8, 12, 16][Math.floor(srng() * 4)];
   const leadOct = 1 + Math.floor(rng() * 2);                 // melody register above the root
   const padOct = 0;
-  const melodyRest = 0.55 + rng() * 0.32;                    // (unused by the new motif melody; kept for evolve)
+  const melodyRest = 0.55 + srng() * 0.32;
 
   // ---- the band plays as ONE, built bottom-up from the drums ----
   // 1) BASS locks to the kick: it lands where the kick lands (or a gentle
   //    pulse when the place has no drums)
   const bass8 = (beat > 0 && kit !== "none")
     ? bassFromKick(drums.K)
-    : (() => { const e = euclid(2 + Math.floor(rng() * 3), 8, 0); e[0] = 1; return e; })();
+    : (() => { const e = euclid(2 + Math.floor(srng() * 3), 8, 0); e[0] = 1; return e; })();
   // 2) CHORDS comp WITH the drums: groove places stab in the kick's pockets
   //    (offbeats without a kick); ambient places keep the sustained pad
-  const compStabs = beat > 0.7 && rng() < 0.55;
+  const compStabs = beat > 0.7 && srng() < 0.55;
   const comp8 = Array(8).fill(0);
   for (let i = 0; i < 8; i++) {
     const s = i * 2;
-    if (i % 2 === 1 && !(drums.K[s] || drums.K[s + 1])) comp8[i] = rng() < 0.7 ? 1 : 0;
+    if (i % 2 === 1 && !(drums.K[s] || drums.K[s + 1])) comp8[i] = srng() < 0.7 ? 1 : 0;
   }
   if (comp8.reduce((a, b) => a + b, 0) === 0) {          // fallback: first kick-free offbeat
     let placed = false;
@@ -625,13 +628,13 @@ function makeCharacter(lat, lng) {
     const s = i * 2;
     const afterSnare = drums.S[(s + 14) % 16] === 1;           // snare on the previous 8th
     const kickHere = drums.K[s] === 1 || drums.K[s + 1] === 1;
-    if (afterSnare && rng() < 0.75) melR8[i] = 1;
-    else if (!kickHere && rng() < 0.35) melR8[i] = 1;
+    if (afterSnare && srng() < 0.75) melR8[i] = 1;
+    else if (!kickHere && srng() < 0.35) melR8[i] = 1;
   }
   if (melR8.reduce((a, b) => a + b, 0) < 3) { melR8[4] = 1; }
   if (melR8.reduce((a, b) => a + b, 0) < 3) { melR8[6] = 1; }
   // 4) the melody arc is built ON that drum-aware rhythm + the famous progression
-  const melodyArc = genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng, melR8);
+  const melodyArc = genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, srng, melR8);
 
   // lead sits INSIDE the atmosphere — mostly wet, its own delay + reverb send,
   // amounts unique to the place (and modulated by time of day at play)
@@ -643,14 +646,14 @@ function makeCharacter(lat, lng) {
 
   // bassline — a low line that walks the chord roots/fifths, blended low
   const bassHits = 2 + Math.floor(rng() * 4);                // 2–5 notes per bar
-  const bassStyle = ["root", "root", "octave", "fifth", "walk"][Math.floor(rng() * 5)];
+  const bassStyle = ["root", "root", "octave", "fifth", "walk"][Math.floor(srng() * 5)];
   const bassVerb = 0.08 + rng() * 0.26;
 
   // rhythm identity
   const kickNote = 33 + Math.floor(rng() * 5);               // stable low thump, not root-following
   const air = 0.03 + rng() * 0.09;
   const airHz = 300 + rng() * 900;
-  const swing = rangePick(rng, G.swing);
+  const swing = rangePick(srng, G.swing);
 
   return { key, scale, palette, root, rhythm, tempo, voices,
     genre, beat, lofi, crackle, droneLevel, hasDrone, hasPad, leadKind, drumKit,
@@ -686,6 +689,11 @@ const dayness = (h) => 0.5 - 0.5 * Math.cos((h / 24) * Math.PI * 2);
 /* ================================================================== */
 /* State                                                               */
 /* ================================================================== */
+/* Two-tier seeding: a place's CHARACTER (genre, scale, instrument, space) is
+   deterministic, but the PERFORMANCE reseeds every visit — you can return to
+   a place and recognise it, but never hear the same song twice. */
+const SESSION_SEED = String(Date.now() % 2147483647) + "." + Math.floor(Math.random() * 1e6);
+
 const state = {
   center: { lat: 40.6782, lng: -73.9442 },
   title: "Brooklyn",
@@ -844,6 +852,8 @@ function buildEngine(char, det) {
   // live, mutable arrangement — evolve() swaps these so the piece moves over time
   let songArc = char.melodyArc, songProg = char.progression, songDrums = char.drums;
   let songBass = char.bass8;     // bass rhythm, locked to the kick; follows drum evolution
+  let songMelR = char.melR8 ? char.melR8.slice() : null;   // melody rhythm, drifts over the sitting
+  let rootNow = char.root;       // the current key — evolve() can modulate it like a bridge
 
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
   // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
@@ -881,7 +891,7 @@ function buildEngine(char, det) {
     const loop = new Tone.Loop((time) => {
       if (Math.random() > trigProb()) return;
       const deg = v.degrees[Math.floor(Math.random() * v.degrees.length)];
-      let midi = char.root + char.scale.ints[deg] + 12 * v.octave + chord.offset;
+      let midi = rootNow + char.scale.ints[deg] + 12 * v.octave + chord.offset;
       midi = Math.max(24, Math.min(100, midi));
       play(Tone.Frequency(midi, "midi"), v.interval * char.palette.len, time);
     }, v.interval);
@@ -933,7 +943,7 @@ function buildEngine(char, det) {
       // (same drum-derived rhythm, so the new tune still fits the groove)
       if (posInPhrase === 0 && globalPhrase > 0 && globalPhrase % songArc.arcLen === 0) {
         arcSeed++;
-        songArc = genMelodyArc(char.scale, char.seventh, CS, songProg, char.melodyRest, mulberry32(hashStr(char.key + "|arc" + arcSeed)), char.melR8);
+        songArc = genMelodyArc(char.scale, char.seventh, CS, songProg, char.melodyRest, mulberry32(hashStr(char.key + "|" + SESSION_SEED + "|arc" + arcSeed)), songMelR);
       }
       const pIdx = globalPhrase % songArc.arcLen;
       if (posInChord === 0) {                  // new chord
@@ -942,7 +952,7 @@ function buildEngine(char, det) {
         chord.offset = tones[0];               // drones + bass follow the changes
         harmony.tones = tones;
         padFreqs = tones.map((t) => {
-          let pm = char.root + t + 12 * char.padOct;
+          let pm = rootNow + t + 12 * char.padOct;
           while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
           return Tone.Frequency(pm, "midi").toFrequency();
         });
@@ -957,7 +967,7 @@ function buildEngine(char, det) {
       if (cs && cs.play) {
         const d = cs.deg;
         const oct = Math.floor(d / SL);
-        let midi = char.root + char.scale.ints[((d % SL) + SL) % SL] + 12 * (oct + char.leadOct);
+        let midi = rootNow + char.scale.ints[((d % SL) + SL) % SL] + 12 * (oct + char.leadOct);
         while (midi > 84) midi -= 12; while (midi < 52) midi += 12;   // keep the lead in a musical range
         playLead(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.95, time);
         hold = cs.dur - 1;
@@ -982,7 +992,7 @@ function buildEngine(char, det) {
       envelope: { attack: 0.02, decay: 0.4, sustain: 0.55, release: 1.4 },
       volume: -13,
     }).connect(bassGain));
-    const foldBass = (semi) => { let b = char.root - 12 + semi; while (b < 24) b += 12; while (b > 46) b -= 12; return b; };
+    const foldBass = (semi) => { let b = rootNow - 12 + semi; while (b < 24) b += 12; while (b > 46) b -= 12; return b; };
     let bi = 0;
     const bl = new Tone.Loop((time) => {
       const onBeat = bi % 8 === 0;
@@ -1023,7 +1033,7 @@ function buildEngine(char, det) {
   const plinkLoop = new Tone.Loop((time) => {
     if (Math.random() < params.rain * 0.75) {
       const deg = char.scale.ints[Math.floor(Math.random() * char.scale.ints.length)];
-      plink.triggerAttackRelease(Tone.Frequency(char.root + 36 + deg + chord.offset, "midi"), 0.3, time);
+      plink.triggerAttackRelease(Tone.Frequency(rootNow + 36 + deg + chord.offset, "midi"), 0.3, time);
     }
   }, "8n");
   plinkLoop.start(0);
@@ -1150,15 +1160,42 @@ function buildEngine(char, det) {
        Called about once a minute so the piece never loops verbatim. */
     evolve() {
       evo++;
-      const rng = mulberry32(hashStr(char.key + "|evo" + evo));
-      // the melody arc regenerates itself when it completes (see the song loop);
-      // the famous progression stays put so the harmony keeps making sense.
-      if (char.beat > 0 && char.kit !== "none") {                                // drum variation + occasional fill
-        const d = genDrums(char.kit, rng);
+      const rng = mulberry32(hashStr(char.key + "|" + SESSION_SEED + "|evo" + evo));
+      // every minute: a subtle move. The moves ACCUMULATE, so five minutes out
+      // the song is clearly elsewhere and ten minutes out it's a different land.
+      if (char.beat > 0 && char.kit !== "none") {
+        const d = genDrums(char.kit, rng);                    // drum variation + occasional fill
         if (rng() < 0.4) { d.S[15] = 1; if (rng() < 0.5) d.H[15] = 1; }
         songDrums = d;
         songBass = bassFromKick(d.K);          // the bass follows the kick wherever it goes
+        if (evo % 3 === 2 && drumSwap && picks.beat === "auto") {   // ~3 min: the drum SOUND changes
+          const kits = Object.keys(DRUM_KITS);
+          drumSwap(kits[Math.floor(rng() * kits.length)]);
+        }
       }
+      // the melody's rhythm drifts: nudge one onset (keep the downbeat)
+      if (songMelR && rng() < 0.6) {
+        const r = songMelR.slice();
+        const j = 1 + Math.floor(rng() * 7);
+        r[j] = r[j] ? 0 : 1;
+        if (r.reduce((a, b) => a + b, 0) >= 2) songMelR = r;
+      }
+      // ~4 min: modulate the key a whole step, like a bridge (stays near home)
+      if (evo % 4 === 3 && rng() < 0.7) {
+        const next = rootNow + (rng() < 0.5 ? 2 : -2);
+        rootNow = Math.max(char.root - 4, Math.min(char.root + 4, next));
+      }
+      // ~5 min: a new SECTION — a different famous progression from the genre
+      if (evo % 5 === 0) {
+        const keys = GENRE_PROGS[char.genre] || ["pop1"];
+        const SLn = char.scale.ints.length;
+        songProg = PROGS[keys[Math.floor(rng() * keys.length)]].map((d) => ((d % SLn) + SLn) % SLn);
+        songArc = genMelodyArc(char.scale, char.seventh, char.chordSteps, songProg, char.melodyRest, rng, songMelR);
+      }
+      // texture wanders within bounds: brightness, lead wash, drone density
+      this.brightBias = Math.max(0.5, Math.min(2.2, this.brightBias * (0.92 + rng() * 0.18)));
+      this.leadVerbBase = Math.max(0.25, Math.min(1, this.leadVerbBase * (0.9 + rng() * 0.22)));
+      char.activity = Math.max(0.1, Math.min(1.4, char.activity * (0.88 + rng() * 0.28)));
       det.voices.forEach((v) => {                                               // shift the drone wash
         v.degrees = v.degrees.map(() => Math.floor(rng() * char.scale.ints.length));
       });
