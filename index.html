@@ -272,40 +272,48 @@ function genScale(rng) {
   return { ints: Array.from(set).sort((a, b) => a - b) };
 }
 
-/* The melody as a STORY: a core theme developed across several phrases with a
-   rising-then-resolving arc. Each phrase spans one full chord progression; the
-   theme is transposed up toward a climax (mid-arc) then brought home. Returns
-   { phrases: step-arrays, arcLen, phraseSteps }. Notes index a 3-octave ladder
-   of the current chord's tones, so everything stays in key. */
-function genMelodyArc(seventh, chordSteps, progLen, melodyRest, rng) {
-  const base = seventh ? 4 : 3;                       // chord tones per octave
+/* The melody: a recurring MOTIF (a chosen contour + rhythm) played over each
+   chord, always starting on a chord tone and moving stepwise through the scale
+   — the way familiar tunes follow the changes. Developed across a rising-then-
+   resolving arc. Notes are absolute SCALE degrees; the render maps them to pitch.
+   Returns { phrases, arcLen, phraseSteps }. */
+function genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng) {
+  const L = scale.ints.length;
   const CS = chordSteps;
-  const phraseSteps = progLen * CS;
-  const arcLen = 6 + Math.floor(rng() * 5);           // 6–10 phrases → a long, moving line
-  // core motif: contour + rhythm, one chord long, recurring (developed) across phrases
-  const theme = [];
-  let cur = Math.floor(base / 2);
-  for (let s = 0; s < CS; s++) {
-    cur = Math.max(0, Math.min(base - 1, cur + (Math.floor(rng() * 3) - 1)));   // stepwise, within one octave
-    const dr = rng(); const dur = dr < 0.4 ? 1 : dr < 0.75 ? 2 : dr < 0.92 ? 3 : 4;
-    theme.push({ step: cur, dur, weight: rng() });
-  }
+  const cyc = progression.length;
+  const phraseSteps = cyc * CS;
+  const arcLen = 4 + Math.floor(rng() * 4);            // 4–7 phrases
+  const chordTones = seventh ? [0, 2, 4, 6] : [0, 2, 4];   // scale-step offsets forming the chord
+  const contour = CONTOURS[Math.floor(rng() * CONTOURS.length)];
+  const rhy = RHYTHMS8[Math.floor(rng() * RHYTHMS8.length)];
+  const startTone = Math.floor(rng() * chordTones.length); // which chord tone the motif opens on
+
   const phrases = [];
   for (let p = 0; p < arcLen; p++) {
     const arc = arcLen > 1 ? Math.sin(Math.PI * p / (arcLen - 1)) : 1;  // 0 → 1 → 0, climax mid-arc
-    const lift = Math.round(arc * base);              // register climbs ~an octave toward the climax
-    const restCut = arc * 0.3;                         // busier toward the climax
+    const lift = Math.round(arc * (L - 1) * 0.6);      // the tune climbs toward the climax
+    const dens = arc * 0.22;                            // a few more passing notes at the peak
     const phrase = [];
+    let onsetIdx = 0;
     for (let s = 0; s < phraseSteps; s++) {
-      const th = theme[s % CS];
-      const onBeat = (s % CS) === 0;                   // land on each chord change
-      const play = onBeat || th.weight > (melodyRest - restCut);
-      const step = Math.max(0, Math.min(base * 2 - 1, th.step + lift));
-      phrase.push({ play, step, dur: th.dur });
+      const chordIdx = Math.floor(s / CS) % cyc;
+      const inChord = s % CS;
+      if (inChord === 0) onsetIdx = 0;                  // the motif restarts on each chord
+      const onset = rhy[Math.floor(inChord * 8 / CS)] === 1;
+      const extra = rng() < dens && inChord % 2 === 0;
+      if (!(onset || extra)) { phrase.push({ play: false }); continue; }
+      const ctBase = progression[chordIdx] + chordTones[startTone];   // the chord tone we open on
+      const move = contour[onsetIdx % contour.length] + (onset ? 0 : 1);
+      const deg = Math.max(0, Math.min(L * 3 - 1, ctBase + move + lift));
+      onsetIdx++;
+      const dr = rng(); const dur = dr < 0.5 ? 1 : dr < 0.85 ? 2 : 3;
+      phrase.push({ play: true, deg, dur });
     }
     phrases.push(phrase);
   }
-  phrases[arcLen - 1][0] = { play: true, step: 0, dur: 2 };   // resolve home at the end
+  // resolve home: last sounded note of the arc lands on the tonic
+  const last = phrases[arcLen - 1];
+  for (let i = last.length - 1; i >= 0; i--) { if (last[i].play) { last[i] = { play: true, deg: 0, dur: 2 }; break; } }
   return { phrases, arcLen, phraseSteps };
 }
 
@@ -428,6 +436,46 @@ function genreOf(lat, lng) {
   return best;
 }
 
+/* Famous chord progressions, as diatonic scale-degree sequences (0=I, 4=V, 5=vi…). */
+const PROGS = {
+  pop1: [0, 4, 5, 3],            // I–V–vi–IV (the "four chords" pop loop)
+  pop2: [5, 3, 0, 4],            // vi–IV–I–V
+  doowop: [0, 5, 3, 4],          // I–vi–IV–V (50s)
+  pop4: [0, 3, 4],               // I–IV–V
+  jazz251: [1, 4, 0],            // ii–V–I
+  jazz1625: [0, 5, 1, 4],        // I–vi–ii–V (rhythm changes)
+  blues: [0, 0, 3, 0, 4, 3, 0, 4], // 12-bar blues, condensed
+  canon: [0, 4, 5, 2, 3, 0, 3, 4], // Pachelbel
+  minorpop: [0, 5, 2, 6],        // i–VI–III–VII
+  andalusian: [0, 6, 5, 4],      // i–VII–VI–V (flamenco/phrygian cadence)
+  minor1: [0, 6, 5, 6],          // i–VII–VI–VII
+  folk: [0, 3, 0, 4],            // I–IV–I–V
+  vamp: [0, 3],                  // I–IV vamp
+  static: [0],                   // one chord / drone
+};
+const GENRE_PROGS = {
+  cyberpunk: ["minorpop", "andalusian", "pop2", "minor1"], hiphop: ["jazz1625", "minorpop", "doowop", "vamp"],
+  bluegrass: ["folk", "pop1", "pop4"], blues: ["blues", "pop4", "folk"], jazz: ["jazz251", "jazz1625", "canon"],
+  techno: ["minorpop", "minor1", "vamp", "static"], house: ["pop1", "doowop", "jazz1625", "vamp"],
+  afrobeat: ["vamp", "pop1", "folk"], latin: ["jazz1625", "andalusian", "pop2"], flamenco: ["andalusian", "minor1"],
+  mediterranean: ["andalusian", "minorpop", "minor1"], middleeastern: ["andalusian", "minor1", "static"],
+  indian: ["static", "vamp", "minor1"], gamelan: ["static", "vamp"], eastasian: ["static", "vamp", "pop4"],
+  nordic: ["static", "vamp", "minorpop"], celtic: ["folk", "pop1", "pop4"], classical: ["canon", "pop1", "folk"],
+  island: ["pop1", "doowop", "folk"], balkan: ["andalusian", "minorpop", "minor1"], lofi: ["jazz1625", "minorpop", "doowop"],
+  ambient: ["static", "vamp", "minorpop"],
+};
+
+/* Melodic phrasing: motif CONTOURS (stepwise scale-step offsets, starting on a
+   chord tone) and RHYTHMS (which eighth-slots carry an onset). Familiar shapes. */
+const CONTOURS = [
+  [0], [0, 1], [0, 2], [0, 1, 2], [0, -1, -2], [0, 1, 2, 1], [0, -1, -2, -1], [0, 2, 1, 0],
+  [0, 1, 0, -1], [0, -1, 0, 1], [0, 2, 4, 2], [0, 1, 2, 3], [0, -1, -2, -3], [0, 1, -1, 0], [0, 2, 1, 3],
+];
+const RHYTHMS8 = [
+  [1, 0, 0, 0, 1, 0, 0, 0], [1, 0, 1, 0, 1, 0, 1, 0], [1, 0, 0, 1, 0, 0, 1, 0], [1, 0, 1, 0, 0, 1, 0, 0],
+  [1, 0, 0, 0, 1, 0, 1, 0], [1, 1, 0, 1, 0, 0, 1, 0], [1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 1, 0, 1, 0, 0],
+];
+
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
 
@@ -440,6 +488,7 @@ function makeCharacter(lat, lng) {
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
   // scale: genre-appropriate, with an occasional wildcard for surprise
   const scale = { ints: (rng() < 0.12 ? genScale(rng).ints : SC[pick(G.scales)]) };
+  const L = scale.ints.length;
   const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
   const root = 41 + Math.floor(rng() * 12) + palette.bias;   // register bias per palette
   const tempo = Math.round(rangePick(rng, G.tempo));
@@ -502,20 +551,15 @@ function makeCharacter(lat, lng) {
   const bassPulse = rng() < 0.5;
   const bassWave = ["sine", "triangle", "sawtooth", "square"][Math.floor(rng() * 4)];
 
-  // ---- song layer: a chord progression, and a melody that follows it ----
+  // ---- song layer: a FAMOUS chord progression, and a melody that follows it ----
   const seventh = rng() < G.seventh;                         // jazzier genres use 7th chords
-  const progLen = [1, 2, 2, 3, 3, 4, 4][Math.floor(rng() * 7)];
-  const progression = [0];                                   // always open on the tonic
-  for (let i = 1; i < progLen; i++) {
-    let d;
-    do { d = Math.floor(rng() * scale.ints.length); } while (scale.ints.length > 1 && d === progression[i - 1]);
-    progression.push(d);
-  }
-  const chordSteps = [8, 8, 12, 16][Math.floor(rng() * 4)];  // eighth-notes each chord holds (1–2 bars)
+  const progKeys = GENRE_PROGS[genre] || ["pop1"];
+  const progression = PROGS[pick(progKeys)].map((d) => ((d % L) + L) % L);   // mapped into this scale
+  const chordSteps = progression.length >= 6 ? 8 : [8, 8, 12, 16][Math.floor(rng() * 4)];
   const leadOct = 1 + Math.floor(rng() * 2);                 // melody register above the root
   const padOct = 0;
-  const melodyRest = 0.55 + rng() * 0.32;                    // sparse baseline; the arc adds notes at its climax
-  const melodyArc = genMelodyArc(seventh, chordSteps, progression.length, melodyRest, rng);
+  const melodyRest = 0.55 + rng() * 0.32;                    // (unused by the new motif melody; kept for evolve)
+  const melodyArc = genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng);
 
   // lead sits INSIDE the atmosphere — mostly wet, its own delay + reverb send,
   // amounts unique to the place (and modulated by time of day at play)
@@ -804,7 +848,8 @@ function buildEngine(char, det) {
     const playLead = makeLead(char, leadGain, track);   // the melody's instrument varies per place
 
     const CS = char.chordSteps;
-    let ladder = null, m = 0, hold = 0, arcSeed = 0;
+    const SL = char.scale.ints.length;
+    let m = 0, hold = 0, arcSeed = 0;
     const song = new Tone.Loop((time) => {
       const PS = songArc.phraseSteps;
       const posInPhrase = m % PS;
@@ -813,7 +858,7 @@ function buildEngine(char, det) {
       // when the whole arc has played out, generate the next chapter of the story
       if (posInPhrase === 0 && globalPhrase > 0 && globalPhrase % songArc.arcLen === 0) {
         arcSeed++;
-        songArc = genMelodyArc(char.seventh, CS, songProg.length, char.melodyRest, mulberry32(hashStr(char.key + "|arc" + arcSeed)));
+        songArc = genMelodyArc(char.scale, char.seventh, CS, songProg, char.melodyRest, mulberry32(hashStr(char.key + "|arc" + arcSeed)));
       }
       const pIdx = globalPhrase % songArc.arcLen;
       if (posInChord === 0) {                  // new chord
@@ -821,7 +866,6 @@ function buildEngine(char, det) {
         const tones = triad(char.scale, di, char.seventh);
         chord.offset = tones[0];               // drones + bass follow the changes
         harmony.tones = tones;
-        ladder = tones.concat(tones.map((t) => t + 12)).sort((a, b) => a - b);   // 2-octave chord-tone ladder
         if (pad) {
           const freqs = tones.map((t) => {
             let pm = char.root + t + 12 * char.padOct;
@@ -833,9 +877,10 @@ function buildEngine(char, det) {
       }
       const cs = songArc.phrases[pIdx][posInPhrase];
       if (hold > 0) { hold--; m++; return; }   // let long notes ring
-      if (cs && cs.play && ladder) {
-        const t = ladder[Math.max(0, Math.min(ladder.length - 1, cs.step))];
-        let midi = char.root + t + 12 * char.leadOct;
+      if (cs && cs.play) {
+        const d = cs.deg;
+        const oct = Math.floor(d / SL);
+        let midi = char.root + char.scale.ints[((d % SL) + SL) % SL] + 12 * (oct + char.leadOct);
         while (midi > 84) midi -= 12; while (midi < 52) midi += 12;   // keep the lead in a musical range
         playLead(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.95, time);
         hold = cs.dur - 1;
@@ -1029,12 +1074,8 @@ function buildEngine(char, det) {
     evolve() {
       evo++;
       const rng = mulberry32(hashStr(char.key + "|evo" + evo));
-      // (the melody arc regenerates itself when it completes — see the song loop)
-      if (rng() < 0.5 && songProg.length > 1) {                                  // reharmonise one chord
-        const p = songProg.slice();
-        p[1 + Math.floor(rng() * (p.length - 1))] = Math.floor(rng() * char.scale.ints.length);
-        songProg = p;
-      }
+      // the melody arc regenerates itself when it completes (see the song loop);
+      // the famous progression stays put so the harmony keeps making sense.
       if (char.beat > 0 && char.kit !== "none") {                                // drum variation + occasional fill
         const d = genDrums(char.kit, rng);
         if (rng() < 0.4) { d.S[15] = 1; if (rng() < 0.5) d.H[15] = 1; }
