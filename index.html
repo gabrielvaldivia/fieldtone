@@ -611,6 +611,7 @@ function buildEngine(char, det) {
   let leadVerbNode = null;       // lead reverb send, modulated by time of day
   // mixer taps — the sliders adjust these live (null when a part is absent)
   let leadGainNode = null, padGainNode = null, bassGainNode = null, drumOutNode = null, drumBase = 0, leadDelayNode = null;
+  let drumSwap = null;           // swaps the drum SOUND in place, without touching the groove
   // live, mutable arrangement — evolve() swaps these so the piece moves over time
   let songArc = char.melodyArc, songProg = char.progression, songDrums = char.drums;
 
@@ -806,52 +807,53 @@ function buildEngine(char, det) {
     /* Lo-fi drum bus: punchy and DRY, run through a bit-crusher and a high
        roll-off so it sounds like dusty sampled drums. Lo-fi amount decides how
        crushed and dark. A small dedicated reverb keeps beats defined. */
-    // resolve the drum SOUND: a chosen kit preset, else the place's lo-fi-derived default
-    const DK = DRUM_KITS[char.drumKit];
-    const lofiAmt = DK ? DK.lofi : char.lofi;
-    const kickNote = DK ? DK.kick : char.kickNote;
-    const kDecay = DK ? DK.kDecay : (0.33 - char.lofi * 0.07);
-    const kPd = DK ? DK.kPd : (0.03 + char.lofi * 0.02);
-    const kOct = DK ? DK.kOct : 4;
-    const sNoise = DK ? DK.snare : (char.lofi > 0.5 ? "pink" : "white");
-    const sDecay = DK ? DK.sDecay : (0.13 - char.lofi * 0.03);
-    const sOff = DK ? DK.sOff : 19;
-    const hNoise = DK ? DK.hat : (char.lofi > 0.5 ? "pink" : "white");
-    const hHi = DK ? DK.hHi : (7500 - char.lofi * 3200);
-
+    // shared drum bus (created once) — the sound swap only rebuilds the synths on it
     const drumOut = track(new Tone.Gain(0.95 * char.beat).connect(filter));
     drumOutNode = drumOut; drumBase = 0.95 * char.beat;
-    const crush = track(new Tone.BitCrusher(Math.round(4 + (1 - lofiAmt) * 8)).connect(drumOut));
-    crush.wet.value = 0.3 + lofiAmt * 0.6;
-    const drumLP = track(new Tone.Filter(2200 + (1 - lofiAmt) * 8800, "lowpass").connect(crush));
+    const crush = track(new Tone.BitCrusher(8).connect(drumOut));
+    const drumLP = track(new Tone.Filter(8000, "lowpass").connect(crush));
     const drumBus = track(new Tone.Gain(1).connect(drumLP));
     const drumVerb = track(new Tone.Reverb({ decay: 1.1 + char.beat * 1.1, wet: 1 }).connect(drumOut));
-    const drumSend = track(new Tone.Gain(0.1 + (1 - lofiAmt) * 0.16).connect(drumVerb));
+    const drumSend = track(new Tone.Gain(0.2).connect(drumVerb));
     drumBus.connect(drumSend);
+    const snareBP = track(new Tone.Filter(1800, "bandpass").connect(drumBus)); snareBP.Q.value = 0.8;
+    const hatHP = track(new Tone.Filter(7500, "highpass").connect(drumBus));
 
-    const kick = track(new Tone.MembraneSynth({
-      pitchDecay: kPd, octaves: kOct, oscillator: { type: "sine" },
-      envelope: { attack: 0.001, decay: kDecay, sustain: 0 }, volume: -5,
-    }).connect(drumBus));
-    // snare = a filtered noise burst + a short tuned body, together
-    const snareBP = track(new Tone.Filter(1800, "bandpass").connect(drumBus));
-    snareBP.Q.value = 0.8;
-    const snareNoise = track(new Tone.NoiseSynth({
-      noise: { type: sNoise },
-      envelope: { attack: 0.001, decay: sDecay, sustain: 0 }, volume: -13,
-    }).connect(snareBP));
-    const snareBody = track(new Tone.Synth({
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.001, decay: 0.12, sustain: 0 }, volume: -17,
-    }).connect(drumBus));
-    const hatHP = track(new Tone.Filter(hHi, "highpass").connect(drumBus));
-    const hat = track(new Tone.NoiseSynth({
-      noise: { type: hNoise },
-      envelope: { attack: 0.001, decay: 0.03, sustain: 0 }, volume: -23,
-    }).connect(hatHP));
+    // resolve a sound preset (or the place's lo-fi-derived default) into concrete params
+    const resolveSound = (name) => {
+      const DK = DRUM_KITS[name];
+      return {
+        lofi: DK ? DK.lofi : char.lofi, kick: DK ? DK.kick : char.kickNote,
+        kDecay: DK ? DK.kDecay : (0.33 - char.lofi * 0.07), kPd: DK ? DK.kPd : (0.03 + char.lofi * 0.02),
+        kOct: DK ? DK.kOct : 4, snare: DK ? DK.snare : (char.lofi > 0.5 ? "pink" : "white"),
+        sDecay: DK ? DK.sDecay : (0.13 - char.lofi * 0.03), sOff: DK ? DK.sOff : 19,
+        hat: DK ? DK.hat : (char.lofi > 0.5 ? "pink" : "white"), hHi: DK ? DK.hHi : (7500 - char.lofi * 3200),
+      };
+    };
+    // (re)build the kick/snare/hat synths for a sound; the bus + pattern loop are untouched
+    function buildKit(name) {
+      const S = resolveSound(name);
+      crush.bits.value = Math.round(4 + (1 - S.lofi) * 8);
+      crush.wet.value = 0.3 + S.lofi * 0.6;
+      drumLP.frequency.value = 2200 + (1 - S.lofi) * 8800;
+      drumSend.gain.value = 0.1 + (1 - S.lofi) * 0.16;
+      hatHP.frequency.value = S.hHi;
+      const kick = new Tone.MembraneSynth({ pitchDecay: S.kPd, octaves: S.kOct, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: S.kDecay, sustain: 0 }, volume: -5 }).connect(drumBus);
+      const snareNoise = new Tone.NoiseSynth({ noise: { type: S.snare }, envelope: { attack: 0.001, decay: S.sDecay, sustain: 0 }, volume: -13 }).connect(snareBP);
+      const snareBody = new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.001, decay: 0.12, sustain: 0 }, volume: -17 }).connect(drumBus);
+      const hat = new Tone.NoiseSynth({ noise: { type: S.hat }, envelope: { attack: 0.001, decay: 0.03, sustain: 0 }, volume: -23 }).connect(hatHP);
+      const nodes = [kick, snareNoise, snareBody, hat];
+      nodes.forEach(track);
+      return { kick, snareNoise, snareBody, hat, kf: Tone.Frequency(S.kick, "midi"), sf: Tone.Frequency(S.kick + S.sOff, "midi"), nodes };
+    }
 
-    const kf = Tone.Frequency(kickNote, "midi");
-    const snareBodyF = Tone.Frequency(kickNote + sOff, "midi");
+    let kit = buildKit(char.drumKit);
+    drumSwap = (name) => {                          // live sound change — pattern loop keeps running
+      const old = kit;
+      kit = buildKit(name);
+      setTimeout(() => old.nodes.forEach((n) => { try { n.dispose(); } catch (e) {} }), 120);
+    };
+
     let step = 0;
     const rloop = new Tone.Loop((time) => {
       const D = songDrums;                                // evolve() can swap this
@@ -859,13 +861,13 @@ function buildEngine(char, det) {
       const sixteenth = (60 / Tone.Transport.bpm.value) / 4;
       const t = time + (s % 2 === 1 ? char.swing * sixteenth * 2 : 0);   // swing the off-16ths
       const dens = 0.72 + params.density * 0.28;
-      if (D.K[s]) kick.triggerAttackRelease(kf, "8n", t, 0.82 + Math.random() * 0.18);
+      if (D.K[s]) kit.kick.triggerAttackRelease(kit.kf, "8n", t, 0.82 + Math.random() * 0.18);
       if (D.S[s]) {
-        snareNoise.triggerAttackRelease("8n", t, 0.7 + Math.random() * 0.2);
-        snareBody.triggerAttackRelease(snareBodyF, "16n", t, 0.5);
+        kit.snareNoise.triggerAttackRelease("8n", t, 0.7 + Math.random() * 0.2);
+        kit.snareBody.triggerAttackRelease(kit.sf, "16n", t, 0.5);
       }
       if (D.H[s] && Math.random() < dens) {
-        hat.triggerAttackRelease("16n", t, (s % 4 === 0 ? 0.5 : 0.28) + Math.random() * 0.22);
+        kit.hat.triggerAttackRelease("16n", t, (s % 4 === 0 ? 0.5 : 0.28) + Math.random() * 0.22);
       }
       step++;
     }, "16n");
@@ -885,6 +887,9 @@ function buildEngine(char, det) {
   return {
     master, filter, windGain, air: char.air, brightBias: char.brightBias, lofi: char.lofi,
     leadVerb: leadVerbNode, leadVerbBase: char.leadVerbAmt,
+    hasDrums: !!drumSwap,
+    /* Swap the drum SOUND live — the groove/pattern never stops. */
+    setDrumKit(name) { if (drumSwap) drumSwap(name); },
     /* Live mixer — each value is a 0–2 multiplier over the designed level. */
     setMix(mix) {
       const g = (node, v) => { if (node) node.gain.rampTo(v, 0.08); };
@@ -1206,7 +1211,16 @@ function buildMixer() {
     const strip = document.createElement("div"); strip.className = "strip";
     const sel = document.createElement("select"); sel.className = "pick"; sel.autocomplete = "off"; sel.setAttribute("aria-label", ch.key + " type");
     ch.opts.forEach((o) => { const op = document.createElement("option"); op.value = o; op.textContent = o; sel.appendChild(op); });
-    sel.addEventListener("change", () => { picks[ch.key] = sel.value; rebuildEngine(); });
+    sel.addEventListener("change", () => {
+      picks[ch.key] = sel.value;
+      // the beat dropdown changes the drum SOUND: swap it live so the groove never stops.
+      // (only rebuild for "none", or to add drums to a place that had none)
+      if (ch.key === "beat" && sel.value !== "none" && state.engine && state.engine.hasDrums) {
+        state.engine.setDrumKit(sel.value === "auto" ? undefined : sel.value);
+      } else {
+        rebuildEngine();
+      }
+    });
     const lab = document.createElement("label"); lab.textContent = ch.key;
     strip.append(sel, makeFader(ch.key, 0, 2, 1), lab);
     frag.appendChild(strip);
