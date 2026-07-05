@@ -371,6 +371,7 @@ const state = {
   title: "Brooklyn",
   char: null,
   engine: null,
+  engines: [],                 // every live engine, so stop can dispose them all
   playing: false,
   tzOffsetSec: null,           // from weather API; falls back to longitude estimate
   weather: { rain: 0, wind: 0.1, temp: 16, desc: "" },
@@ -705,7 +706,7 @@ function buildEngine(char, det) {
     master, filter, windGain, air: char.air, brightBias: char.brightBias,
     leadVerb: leadVerbNode, leadVerbBase: char.leadVerbAmt,
     dispose() {
-      loops.forEach((l) => l.dispose());
+      loops.forEach((l) => { try { l.dispose(); } catch (e) {} });
       nodes.forEach((n) => { try { n.dispose(); } catch (e) {} });
     },
   };
@@ -822,12 +823,11 @@ function travel(pos, title) {
   applyConditions();
   fetchWeather();
   if (changed && state.engine) {
-    const old = state.engine;
-    old.master.gain.rampTo(0, 2.6);
-    setTimeout(() => old.dispose(), 3200);
+    fadeDispose(state.engine, 2.6);          // registry-tracked teardown of the old engine
     Tone.Transport.bpm.rampTo(nc.tempo, 2);
     const eng = buildEngine(nc, makeDetails(nc));
     state.engine = eng;
+    registerEngine(eng);
     eng.master.gain.rampTo(0.9, 3.2);
   }
 }
@@ -835,22 +835,42 @@ function travel(pos, title) {
 /* ================================================================== */
 /* Controls                                                            */
 /* ================================================================== */
+/* Engine lifecycle. Every engine is registered so a stop can tear down
+   ALL of them — this is what guarantees nothing is left sounding, even a
+   stray engine from a fast double-tap or overlapping travels. */
+function registerEngine(e) { state.engines.push(e); }
+function fadeDispose(e, secs) {
+  if (!e) return;
+  try { e.master.gain.rampTo(0, secs); } catch (x) {}
+  const i = state.engines.indexOf(e);
+  if (i >= 0) state.engines.splice(i, 1);
+  setTimeout(() => { try { e.dispose(); } catch (x) {} }, secs * 1000 + 400);
+}
+function stopAll(secs) {
+  state.engines.slice().forEach((e) => fadeDispose(e, secs));
+  state.engine = null;
+}
+
+let toggling = false;   // re-entrancy guard: an await window must not start twice
 $("circle").addEventListener("click", async () => {
-  if (state.playing) {
-    const e = state.engine;
-    if (e) { e.master.gain.rampTo(0, 1.6); setTimeout(() => e.dispose(), 2000); }
-    state.engine = null;
-    state.playing = false;
-    document.body.classList.remove("playing");
-    $("hint").textContent = "tap to listen";
-    return;
-  }
+  if (toggling) return;
+  toggling = true;
   try {
+    if (state.playing) {
+      state.playing = false;
+      document.body.classList.remove("playing");
+      $("hint").textContent = "tap to listen";
+      stopAll(1.4);
+      Tone.Transport.stop();          // halt every loop at once — nothing can keep firing
+      return;
+    }
     await Tone.start();
     Tone.Transport.bpm.value = state.char.tempo;
     if (Tone.Transport.state !== "started") Tone.Transport.start();
+    stopAll(0.2);                       // clear any straggler before starting fresh
     const eng = buildEngine(state.char, makeDetails(state.char));
     state.engine = eng;
+    registerEngine(eng);
     eng.master.gain.rampTo(0.95, 1.2);
     state.playing = true;
     document.body.classList.add("playing");
@@ -858,6 +878,8 @@ $("circle").addEventListener("click", async () => {
     applyConditions();
   } catch (err) {
     $("msg").textContent = "audio error: " + err.message;
+  } finally {
+    toggling = false;
   }
 });
 
