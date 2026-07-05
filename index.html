@@ -664,7 +664,7 @@ const state = {
   engines: [],                 // every live engine, so stop can dispose them all
   playing: false,
   tzOffsetSec: null,           // from weather API; falls back to longitude estimate
-  weather: { rain: 0, wind: 0.1, temp: 16, desc: "", windKmh: 0 },
+  weather: { rain: 0, wind: 0.1, temp: 16, desc: "", windKmh: 0, code: 1 },
 };
 state.char = makeCharacter(state.center.lat, state.center.lng);
 const params = { density: 0.75, rain: 0, wind: 0.1 };
@@ -1049,16 +1049,53 @@ function localHour() {
   return t.getUTCHours() + t.getUTCMinutes() / 60;
 }
 
+/* The background is the LOCAL sky: time of day AND live weather.
+   Clear noon = blue, overcast = grey, rain = slate, snow = milky, storms are
+   near-black, and dawn/dusk warm the horizon when the sky is open. The text
+   colour is then chosen from the sky's actual luminance for legibility. */
 function applySky(hour) {
+  const mixN = (a, b, t) => a + (b - a) * t;
   const d = dayness(hour);
-  const dusk = Math.exp(-Math.pow((hour - 6.5) % 24, 2) / 3) + Math.exp(-Math.pow((hour - 19) % 24, 2) / 3);
+  const dawn = Math.exp(-Math.pow((hour - 6.5) % 24, 2) / 3);
+  const dusk = Math.exp(-Math.pow((hour - 19) % 24, 2) / 3);
+  const glow = Math.min(1, dawn + dusk);
+
+  const code = state.weather.code == null ? 1 : state.weather.code;
+  const snow = (code >= 71 && code <= 77) || code === 85 || code === 86;
+  const storm = code >= 95;
+  const rainy = (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+  const grey = code === 3 || code === 45 || code === 48;
+  const cloud = (storm || rainy || grey || snow) ? 1 : code === 2 ? 0.45 : code === 1 ? 0.15 : 0;
+
+  // clear-sky endpoints, night → midday
+  let topH = 224 - d * 12, topS = 45 + d * 30, topL = 6 + d * 42;
+  let botH = 216 - d * 14, botS = 40 + d * 28, botL = 11 + d * 56;
+
+  // weather pulls the sky toward its own grey (scaled by daylight)
+  let gTopL = 5 + d * 55, gBotL = 9 + d * 62;                  // overcast / fog
+  if (rainy) { gTopL = 4 + d * 38; gBotL = 8 + d * 46; }       // slate
+  if (storm) { gTopL = 3 + d * 27; gBotL = 6 + d * 33; }       // near-black
+  if (snow)  { gTopL = 8 + d * 66; gBotL = 12 + d * 72; }      // milky white
+  topS = mixN(topS, 6, cloud); botS = mixN(botS, 7, cloud);
+  topL = mixN(topL, gTopL, cloud); botL = mixN(botL, gBotL, cloud);
+
+  // dawn/dusk warm the horizon when the sky is open (clouds smother the glow)
+  const warm = glow * (1 - cloud * 0.95);
+  botH = mixN(botH, 26, warm);
+  botS = mixN(botS, 68, warm);
+  botL = mixN(botL, Math.max(botL, 40), warm);
+  topH = mixN(topH, 258, warm * 0.5);
+
   const rs = document.documentElement.style;
-  rs.setProperty("--top", `hsl(${232 - d * 22} ${42 - d * 10}% ${7 + d * 26}%)`);
-  rs.setProperty("--bottom", `hsl(${232 - d * 30 + dusk * 60} ${38 + dusk * 28}% ${12 + d * 30 + dusk * 8}%)`);
-  const day = d > 0.62;
-  rs.setProperty("--ink", day ? "rgba(16,20,44,0.92)" : "rgba(236,238,250,0.94)");
-  rs.setProperty("--faint", day ? "rgba(16,20,44,0.5)" : "rgba(236,238,250,0.45)");
-  rs.setProperty("--line", day ? "rgba(16,20,44,0.18)" : "rgba(236,238,250,0.16)");
+  rs.setProperty("--top", `hsl(${topH.toFixed(0)} ${topS.toFixed(0)}% ${topL.toFixed(0)}%)`);
+  rs.setProperty("--bottom", `hsl(${botH.toFixed(0)} ${botS.toFixed(0)}% ${botL.toFixed(0)}%)`);
+
+  // text: pick the ink with the best contrast against the actual sky
+  const bgL = topL * 0.65 + botL * 0.35;    // the header lives near the top
+  const darkInk = bgL > 50;
+  rs.setProperty("--ink", darkInk ? "rgba(14,18,38,0.94)" : "rgba(236,238,250,0.94)");
+  rs.setProperty("--faint", darkInk ? "rgba(14,18,38,0.58)" : "rgba(236,238,250,0.52)");
+  rs.setProperty("--line", darkInk ? "rgba(14,18,38,0.24)" : "rgba(236,238,250,0.18)");
 }
 
 function applyConditions() {
@@ -1114,6 +1151,7 @@ async function fetchWeather() {
       rain: Math.min((c.precipitation || 0) / 3, 1) * (snowish ? 0.5 : 1),
       wind: Math.min((c.wind_speed_10m || 0) / 40, 1),
       windKmh: c.wind_speed_10m || 0,
+      code: c.weather_code,
       desc: WCODE[c.weather_code] || "",
     };
     applyConditions();
