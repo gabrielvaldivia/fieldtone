@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fieldtone — a sound for every place and time</title>
+<meta name="description" content="A continuous, generative ambient sound unique to every location and moment on Earth.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --top: hsl(232 42% 7%);
+    --bottom: hsl(232 38% 12%);
+    --ink: rgba(236,238,250,0.94);
+    --faint: rgba(236,238,250,0.45);
+    --line: rgba(236,238,250,0.16);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: linear-gradient(180deg, var(--top) 0%, var(--bottom) 100%);
+    background-attachment: fixed;
+    transition: background 2s ease;
+    color: var(--ink);
+    font-family: 'Space Grotesk', sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: max(36px, env(safe-area-inset-top)) 20px 56px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.14em; text-transform: uppercase; }
+  header { text-align: center; }
+  #coords { font-size: 10px; letter-spacing: 0.22em; color: var(--faint); margin-bottom: 8px; min-height: 13px; }
+  h1 { font-weight: 300; font-size: 30px; letter-spacing: 0.04em; margin: 0; transition: opacity 1.5s; }
+  h1.fading { opacity: 0.3; }
+  #meta { font-size: 10px; color: var(--faint); margin-top: 8px; min-height: 13px; }
+  #circle { position: relative; width: 230px; height: 230px; margin: 34px 0 8px; background: transparent; border: none; cursor: pointer; }
+  #circle .ring {
+    position: absolute; border-radius: 50%; border: 1px solid var(--line);
+    opacity: 0.5; transition: opacity 1s;
+  }
+  body.playing #circle .ring { opacity: 1; animation: breathe var(--dur, 9s) ease-in-out infinite; }
+  #dot {
+    position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px;
+    border-radius: 50%; background: var(--ink);
+  }
+  body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
+  #hint { font-size: 9px; color: var(--faint); }
+  #weather { font-size: 9px; color: var(--faint); margin-top: 10px; min-height: 12px; }
+  .searchrow { width: min(340px, 100%); margin-top: 30px; position: relative; }
+  .searchbar { display: flex; gap: 10px; align-items: center; }
+  #q {
+    flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--line);
+    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 16px; padding: 8px 2px;
+  }
+  #q::placeholder { color: var(--ink); opacity: 0.4; }
+  #locate {
+    background: transparent; border: 1px solid var(--line); border-radius: 999px; color: var(--ink);
+    font-size: 9px; padding: 8px 13px; cursor: pointer; white-space: nowrap;
+  }
+  #results {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
+    background: var(--top); border: 1px solid var(--line); border-radius: 4px; margin-top: 4px;
+    display: none;
+  }
+  #results.open { display: block; }
+  #results button {
+    display: block; width: 100%; text-align: left; background: transparent; border: none;
+    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 15px; padding: 11px 12px; cursor: pointer;
+  }
+  #results button .sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-left: 10px; }
+  #msg { font-size: 9px; color: var(--faint); margin-top: 14px; text-align: center; min-height: 12px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+  @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+  <header>
+    <div id="coords" class="mono"></div>
+    <h1 id="title">Somewhere</h1>
+    <div id="meta" class="mono"></div>
+  </header>
+
+  <button id="circle" aria-label="Begin sound">
+    <span id="rings"></span>
+    <span id="dot"></span>
+  </button>
+  <div id="hint" class="mono">tap to listen</div>
+  <div id="weather" class="mono"></div>
+
+  <div class="searchrow">
+    <div class="searchbar">
+      <input id="q" placeholder="go anywhere on earth…" aria-label="Search for a place" autocomplete="off">
+      <button id="locate" class="mono" aria-label="Use my location">◎ locate me</button>
+    </div>
+    <div id="results" role="listbox"></div>
+  </div>
+  <div id="msg" class="mono"></div>
+
+<script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+<script>
+/* ================================================================== */
+/* Seeding                                                             */
+/* ================================================================== */
+const hashStr = (s) => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+const mulberry32 = (a) => () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const euclid = (hits, steps, rot = 0) => { const p = []; let b = 0; for (let i = 0; i < steps; i++) { b += hits; if (b >= steps) { b -= steps; p.push(1); } else p.push(0); } return p.map((_, i) => p[(i + rot) % steps]); };
+
+const SCALES = [
+  { name: "Lydian", ints: [0, 2, 4, 6, 7, 9, 11] },
+  { name: "Major pentatonic", ints: [0, 2, 4, 7, 9] },
+  { name: "Dorian", ints: [0, 2, 3, 5, 7, 9, 10] },
+  { name: "Whole tone", ints: [0, 2, 4, 6, 8, 10] },
+];
+const CELL = 0.001;
+const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
+
+function makeCharacter(lat, lng) {
+  const c = cellOf(lat, lng);
+  const key = c.lat.toFixed(3) + "," + c.lng.toFixed(3);
+  const rng = mulberry32(hashStr(key));
+  const scale = SCALES[Math.floor(rng() * SCALES.length)];
+  const root = 43 + Math.floor(rng() * 10);
+  const r = rng();
+  const rhythm = r < 0.3 ? 0 : 0.3 + rng() * 0.7;
+  const tempo = 56 + Math.floor(rng() * 28);
+  const voices = 4 + Math.floor(rng() * 3);
+  const kickSteps = [8, 12, 16][Math.floor(rng() * 3)];
+  const kickHits = 1 + Math.floor(rng() * 3);
+  const hatSteps = [9, 11, 13, 16][Math.floor(rng() * 4)];
+  const hatHits = 3 + Math.floor(rng() * (Math.floor(hatSteps / 2) - 2));
+  const bellSteps = [7, 10, 13][Math.floor(rng() * 3)];
+  const air = 0.04 + rng() * 0.08;
+  const swing = rng() * 0.03;
+  return { key, scale, root, rhythm, tempo, voices, kickSteps, kickHits, hatSteps, hatHits, bellSteps, air, swing };
+}
+
+function makeDetails(char) {
+  const rng = mulberry32(hashStr(char.key + "|" + Date.now()));
+  const voices = [];
+  for (let i = 0; i < char.voices; i++) {
+    voices.push({
+      interval: 6 + rng() * 14,
+      octave: [-1, 0, 0, 1, 1, 2][Math.floor(rng() * 6)],
+      degrees: [0, 0, 0].map(() => Math.floor(rng() * char.scale.ints.length)),
+      attack: 2.5 + rng() * 3,
+      wave: rng() > 0.5 ? "sine" : "triangle",
+    });
+  }
+  return {
+    voices,
+    kickRot: Math.floor(rng() * char.kickSteps),
+    hatRot: Math.floor(rng() * char.hatSteps),
+    bellRot: Math.floor(rng() * char.bellSteps),
+  };
+}
+
+const dayness = (h) => 0.5 - 0.5 * Math.cos((h / 24) * Math.PI * 2);
+
+/* ================================================================== */
+/* State                                                               */
+/* ================================================================== */
+const state = {
+  center: { lat: 40.6782, lng: -73.9442 },
+  title: "Brooklyn",
+  char: null,
+  engine: null,
+  playing: false,
+  tzOffsetSec: null,           // from weather API; falls back to longitude estimate
+  weather: { rain: 0, wind: 0.1, temp: 16, desc: "" },
+};
+state.char = makeCharacter(state.center.lat, state.center.lng);
+const params = { density: 0.75, rain: 0, wind: 0.1 };
+
+const $ = (id) => document.getElementById(id);
+
+/* ================================================================== */
+/* Audio engine                                                        */
+/* ================================================================== */
+function buildEngine(char, det) {
+  const nodes = [];
+  const loops = [];
+  const track = (n) => (nodes.push(n), n);
+
+  const master = track(new Tone.Gain(0).toDestination());
+  const filter = track(new Tone.Filter(1400, "lowpass").connect(master));
+  const reverb = track(new Tone.Reverb({ decay: 10, wet: 0.55 }).connect(filter));
+  const delay = track(new Tone.FeedbackDelay(0.44, 0.35).connect(reverb));
+  delay.wet.value = 0.3;
+
+  det.voices.forEach((v) => {
+    const synth = track(new Tone.Synth({
+      oscillator: { type: v.wave },
+      envelope: { attack: v.attack, decay: 2, sustain: 0.7, release: 8 },
+      volume: -12,
+    }).connect(delay));
+    const loop = new Tone.Loop((time) => {
+      if (Math.random() > 0.3 + params.density * 0.7) return;
+      const deg = v.degrees[Math.floor(Math.random() * v.degrees.length)];
+      const midi = char.root + char.scale.ints[deg] + 12 * v.octave;
+      synth.triggerAttackRelease(Tone.Frequency(midi, "midi"), v.interval * 0.55, time);
+    }, v.interval);
+    loop.start(Math.random() * 3);
+    loops.push(loop);
+  });
+
+  const bloom = track(new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: "sine" },
+    envelope: { attack: 0.5, decay: 3, sustain: 0.5, release: 9 },
+    volume: -12,
+  }).connect(delay));
+  bloom.triggerAttackRelease([
+    Tone.Frequency(char.root, "midi").toFrequency(),
+    Tone.Frequency(char.root + 7, "midi").toFrequency(),
+    Tone.Frequency(char.root + 12 + char.scale.ints[1], "midi").toFrequency(),
+  ], 8, Tone.now() + 0.1);
+
+  /* rain shimmer — probability follows live precipitation */
+  const plink = track(new Tone.Synth({
+    oscillator: { type: "sine" },
+    envelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 1.4 },
+    volume: -20,
+  }).connect(delay));
+  const plinkLoop = new Tone.Loop((time) => {
+    if (Math.random() < params.rain * 0.75) {
+      const deg = char.scale.ints[Math.floor(Math.random() * char.scale.ints.length)];
+      plink.triggerAttackRelease(Tone.Frequency(char.root + 36 + deg, "midi"), 0.3, time);
+    }
+  }, "8n");
+  plinkLoop.start(0);
+  loops.push(plinkLoop);
+
+  /* air — base level is the place's own, live wind raises it */
+  const windGain = track(new Tone.Gain(0).connect(reverb));
+  const windFilter = track(new Tone.Filter(600, "bandpass").connect(windGain));
+  windFilter.Q.value = 1.4;
+  const noise = track(new Tone.Noise("pink").connect(windFilter));
+  noise.volume.value = -8;
+  noise.start();
+  const windLfo = track(new Tone.LFO(0.05, 300, 1100).connect(windFilter.frequency));
+  windLfo.start();
+  windGain.gain.rampTo(char.air + params.wind * 0.1, 5);
+
+  if (char.rhythm > 0) {
+    const rhythmBus = track(new Tone.Gain(char.rhythm * 0.9).connect(filter));
+    const rhythmVerb = track(new Tone.Gain(char.rhythm * 0.5).connect(reverb));
+    const kick = track(new Tone.MembraneSynth({
+      pitchDecay: 0.09, octaves: 5,
+      envelope: { attack: 0.001, decay: 0.7, sustain: 0 }, volume: -9,
+    }).connect(rhythmBus));
+    kick.connect(rhythmVerb);
+    const hat = track(new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.001, decay: 0.045, sustain: 0 }, volume: -27,
+    }).connect(rhythmBus));
+    const bell = track(new Tone.FMSynth({
+      harmonicity: 5.1, modulationIndex: 12,
+      envelope: { attack: 0.002, decay: 1.6, sustain: 0 }, volume: -22,
+    }).connect(rhythmVerb));
+
+    const kickPat = euclid(char.kickHits, char.kickSteps, det.kickRot);
+    const hatPat = euclid(char.hatHits, char.hatSteps, det.hatRot);
+    const bellPat = euclid(2, char.bellSteps, det.bellRot);
+    let step = 0;
+    const rloop = new Tone.Loop((time) => {
+      const t = time + (step % 2 === 1 ? char.swing + params.wind * 0.02 : 0);
+      const pres = char.rhythm * (0.55 + params.density * 0.45);
+      if (kickPat[step % kickPat.length] && Math.random() < pres) kick.triggerAttackRelease(Tone.Frequency(char.root - 12, "midi"), "8n", t);
+      if (hatPat[step % hatPat.length] && Math.random() < pres * 0.7 + params.rain * 0.4) hat.triggerAttackRelease("16n", t);
+      if (bellPat[step % bellPat.length] && Math.random() < pres * 0.4) {
+        const deg = char.scale.ints[Math.floor(Math.random() * char.scale.ints.length)];
+        bell.triggerAttackRelease(Tone.Frequency(char.root + 24 + deg, "midi"), "4n", t);
+      }
+      step++;
+    }, "16n");
+    rloop.start(0);
+    loops.push(rloop);
+  }
+
+  return {
+    master, filter, windGain, air: char.air,
+    dispose() {
+      loops.forEach((l) => l.dispose());
+      nodes.forEach((n) => { try { n.dispose(); } catch (e) {} });
+    },
+  };
+}
+
+/* ================================================================== */
+/* Time, sky, conditions                                               */
+/* ================================================================== */
+function localHour() {
+  const off = state.tzOffsetSec != null ? state.tzOffsetSec : Math.round(state.center.lng / 15) * 3600;
+  const t = new Date(Date.now() + off * 1000);
+  return t.getUTCHours() + t.getUTCMinutes() / 60;
+}
+
+function applySky(hour) {
+  const d = dayness(hour);
+  const dusk = Math.exp(-Math.pow((hour - 6.5) % 24, 2) / 3) + Math.exp(-Math.pow((hour - 19) % 24, 2) / 3);
+  const rs = document.documentElement.style;
+  rs.setProperty("--top", `hsl(${232 - d * 22} ${42 - d * 10}% ${7 + d * 26}%)`);
+  rs.setProperty("--bottom", `hsl(${232 - d * 30 + dusk * 60} ${38 + dusk * 28}% ${12 + d * 30 + dusk * 8}%)`);
+  const day = d > 0.62;
+  rs.setProperty("--ink", day ? "rgba(16,20,44,0.92)" : "rgba(236,238,250,0.94)");
+  rs.setProperty("--faint", day ? "rgba(16,20,44,0.5)" : "rgba(236,238,250,0.45)");
+  rs.setProperty("--line", day ? "rgba(16,20,44,0.18)" : "rgba(236,238,250,0.16)");
+}
+
+function applyConditions() {
+  const hour = localHour();
+  const d = dayness(hour);
+  params.density = 0.3 + d * 0.7;
+  params.rain = state.weather.rain;
+  params.wind = state.weather.wind;
+  const e = state.engine;
+  if (e) {
+    e.filter.frequency.rampTo(380 + d * 2300 + (state.weather.temp - 10) * 20, 2);
+    e.windGain.gain.rampTo(e.air + state.weather.wind * 0.1, 3);
+  }
+  applySky(hour);
+  const hh = Math.floor(hour), mm = Math.floor((hour - hh) * 60);
+  const cl = cellOf(state.center.lat, state.center.lng);
+  $("coords").textContent = `${cl.lat.toFixed(3)}°  ${cl.lng.toFixed(3)}°  ·  local ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/* ================================================================== */
+/* Live data                                                           */
+/* ================================================================== */
+const WCODE = { 0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fog", 48: "fog", 51: "drizzle", 53: "drizzle", 55: "drizzle", 61: "light rain", 63: "rain", 65: "heavy rain", 66: "freezing rain", 67: "freezing rain", 71: "light snow", 73: "snow", 75: "heavy snow", 77: "snow", 80: "showers", 81: "showers", 82: "heavy showers", 85: "snow showers", 86: "snow showers", 95: "thunderstorm", 96: "thunderstorm", 99: "thunderstorm" };
+
+async function fetchWeather() {
+  try {
+    const { lat, lng } = state.center;
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,precipitation,wind_speed_10m,weather_code&timezone=auto`);
+    const j = await r.json();
+    state.tzOffsetSec = j.utc_offset_seconds;
+    const c = j.current;
+    const snowish = c.weather_code >= 71 && c.weather_code <= 86;
+    state.weather = {
+      temp: c.temperature_2m,
+      rain: Math.min((c.precipitation || 0) / 3, 1) * (snowish ? 0.5 : 1),
+      wind: Math.min((c.wind_speed_10m || 0) / 40, 1),
+      desc: WCODE[c.weather_code] || "",
+    };
+    $("weather").textContent = `${Math.round(c.temperature_2m)}°C · ${state.weather.desc} · wind ${Math.round(c.wind_speed_10m)} km/h`;
+    applyConditions();
+  } catch (e) { /* offline is fine — the sound still plays */ }
+}
+
+async function reverseTitle() {
+  try {
+    const { lat, lng } = state.center;
+    const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
+    const j = await r.json();
+    const t = j.city || j.locality || j.principalSubdivision || j.countryName;
+    if (t) { state.title = t; $("title").textContent = t; }
+  } catch (e) {}
+}
+
+/* ================================================================== */
+/* Rendering                                                           */
+/* ================================================================== */
+function renderCharacter() {
+  const c = state.char;
+  const label = c.rhythm === 0 ? "pure drone" : c.rhythm < 0.55 ? "faint pulse" : "steady groove";
+  $("meta").textContent = `${c.scale.name} · ${label}` + (c.rhythm > 0 ? ` · ${c.tempo} bpm` : "");
+  $("title").textContent = state.title;
+  const rings = $("rings");
+  rings.innerHTML = "";
+  for (let i = 0; i < c.voices; i++) {
+    const el = document.createElement("span");
+    el.className = "ring";
+    el.style.inset = (i * (115 / c.voices)) + "px";
+    el.style.setProperty("--dur", (7 + i * 3.3) + "s");
+    rings.appendChild(el);
+  }
+  document.documentElement.style.setProperty("--beat", (60 / c.tempo) + "s");
+  document.body.classList.toggle("grooving", c.rhythm > 0);
+}
+
+/* ================================================================== */
+/* Travel                                                              */
+/* ================================================================== */
+function travel(pos, title) {
+  state.center = pos;
+  state.tzOffsetSec = null; // re-estimate until weather returns the real offset
+  if (title) { state.title = title; } else { state.title = pos.lat.toFixed(3) + "°, " + pos.lng.toFixed(3) + "°"; reverseTitle(); }
+  const nc = makeCharacter(pos.lat, pos.lng);
+  const changed = nc.key !== state.char.key;
+  state.char = nc;
+  $("title").classList.add("fading");
+  setTimeout(() => $("title").classList.remove("fading"), 1200);
+  renderCharacter();
+  applyConditions();
+  fetchWeather();
+  if (changed && state.engine) {
+    const old = state.engine;
+    old.master.gain.rampTo(0, 2.6);
+    setTimeout(() => old.dispose(), 3200);
+    Tone.Transport.bpm.rampTo(nc.tempo, 2);
+    const eng = buildEngine(nc, makeDetails(nc));
+    state.engine = eng;
+    eng.master.gain.rampTo(0.9, 3.2);
+  }
+}
+
+/* ================================================================== */
+/* Controls                                                            */
+/* ================================================================== */
+$("circle").addEventListener("click", async () => {
+  if (state.playing) {
+    const e = state.engine;
+    if (e) { e.master.gain.rampTo(0, 1.6); setTimeout(() => e.dispose(), 2000); }
+    state.engine = null;
+    state.playing = false;
+    document.body.classList.remove("playing");
+    $("hint").textContent = "tap to listen";
+    return;
+  }
+  try {
+    await Tone.start();
+    Tone.Transport.bpm.value = state.char.tempo;
+    if (Tone.Transport.state !== "started") Tone.Transport.start();
+    const eng = buildEngine(state.char, makeDetails(state.char));
+    state.engine = eng;
+    eng.master.gain.rampTo(0.95, 1.2);
+    state.playing = true;
+    document.body.classList.add("playing");
+    $("hint").textContent = "tap to stop";
+    applyConditions();
+  } catch (err) {
+    $("msg").textContent = "audio error: " + err.message;
+  }
+});
+
+function locate(silent) {
+  if (!navigator.geolocation) { if (!silent) $("msg").textContent = "geolocation unavailable"; return; }
+  if (!silent) $("msg").textContent = "locating…";
+  navigator.geolocation.getCurrentPosition(
+    (p) => { $("msg").textContent = ""; travel({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+    () => { if (!silent) $("msg").textContent = "location permission denied · try searching instead"; },
+    { timeout: 8000 }
+  );
+}
+$("locate").addEventListener("click", () => locate(false));
+
+/* search — any place on earth via Open-Meteo geocoding */
+let searchTimer = null;
+$("q").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if (q.length < 2) { $("results").classList.remove("open"); return; }
+  searchTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
+      const j = await r.json();
+      const box = $("results");
+      box.innerHTML = "";
+      (j.results || []).forEach((res) => {
+        const b = document.createElement("button");
+        const sub = [res.admin1, res.country].filter(Boolean).join(", ");
+        b.innerHTML = res.name + '<span class="sub">' + sub + "</span>";
+        b.addEventListener("click", () => {
+          $("q").value = "";
+          box.classList.remove("open");
+          travel({ lat: res.latitude, lng: res.longitude }, res.name);
+        });
+        box.appendChild(b);
+      });
+      box.classList.toggle("open", (j.results || []).length > 0);
+    } catch (err) {}
+  }, 300);
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".searchrow")) $("results").classList.remove("open");
+});
+
+/* ================================================================== */
+/* Boot                                                                */
+/* ================================================================== */
+renderCharacter();
+applyConditions();
+fetchWeather();
+reverseTitle();
+locate(true);                       // default to the real current location
+setInterval(applyConditions, 20000);   // real clock drives the sound
+setInterval(fetchWeather, 10 * 60 * 1000); // live weather refresh
+</script>
+</body>
+</html>
