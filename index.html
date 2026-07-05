@@ -23,14 +23,16 @@
     transition: background 2s ease;
     color: var(--ink);
     font-family: 'Space Grotesk', sans-serif;
-    display: grid; place-items: center;
+    display: flex; flex-direction: column; align-items: center;
     min-height: 100dvh;
-    padding: 0 20px;
+    padding: max(28px, env(safe-area-inset-top)) 20px max(18px, env(safe-area-inset-bottom));
     -webkit-tap-highlight-color: transparent;
   }
   .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.14em; text-transform: uppercase; }
-  /* top — the location name IS the search field, with a locate button at its right */
-  .top { position: fixed; top: max(28px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 40px)); z-index: 5; }
+  /* top — the location name (search field) + locate, with the metadata beneath it */
+  .top { position: relative; width: min(560px, 100%); z-index: 5; text-align: center; }
+  #info { font-size: 9px; letter-spacing: 0.12em; color: var(--faint); min-height: 12px; margin-top: 12px; }
+  #msg { font-size: 9px; color: var(--faint); min-height: 12px; margin-top: 4px; }
   .searchbar { position: relative; display: flex; align-items: center; border-bottom: 1px solid transparent; transition: border-color 0.4s; }
   .searchbar:focus-within { border-bottom-color: var(--line); }
   #q {
@@ -61,8 +63,8 @@
   #results button:hover, #results button:focus-visible { background: rgba(236,238,250,0.06); }
   #results button .sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-left: 10px; }
 
-  /* middle — the visual, vertically centred in the viewport */
-  .stage { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  /* middle — the visual, centred in the space between the top and the mixer */
+  .stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
   #circle { position: relative; width: min(230px, 62vw); height: min(230px, 62vw); margin: 0 0 12px; background: transparent; border: none; cursor: pointer; }
   #circle .ring {
     position: absolute; border-radius: 50%; border: 1px solid var(--line);
@@ -76,10 +78,21 @@
   body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
   #hint { font-size: 9px; color: var(--faint); }
 
-  /* bottom — coordinates · time · weather, on one line */
-  .foot { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 40px)); display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
-  #info { font-size: 9px; letter-spacing: 0.12em; color: var(--faint); min-height: 12px; }
-  #msg { font-size: 9px; color: var(--faint); min-height: 12px; }
+  /* bottom — the mixer: sliders to balance the parts and dial the effects */
+  .controls { width: min(560px, 100%); display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px 18px; }
+  .slider { display: flex; flex-direction: column; gap: 6px; }
+  .slider label { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+  .slider input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 2px; border-radius: 2px;
+    background: var(--line); outline: none; cursor: pointer; margin: 6px 0;
+  }
+  .slider input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--ink); cursor: pointer;
+  }
+  .slider input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--ink); cursor: pointer;
+  }
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
   @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
   @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
@@ -93,6 +106,8 @@
       <button id="locate" aria-label="Use my location">◎</button>
     </div>
     <div id="results" role="listbox"></div>
+    <div id="info" class="mono"></div>
+    <div id="msg" class="mono"></div>
   </header>
 
   <main class="stage">
@@ -103,9 +118,14 @@
     <div id="hint" class="mono">tap to listen</div>
   </main>
 
-  <footer class="foot">
-    <div id="info" class="mono"></div>
-    <div id="msg" class="mono"></div>
+  <footer class="controls" id="mixer" aria-label="Mixer">
+    <div class="slider"><label for="s-melody">melody</label><input type="range" id="s-melody" data-mix="melody" min="0" max="2" step="0.01" value="1"></div>
+    <div class="slider"><label for="s-chords">chords</label><input type="range" id="s-chords" data-mix="chords" min="0" max="2" step="0.01" value="1"></div>
+    <div class="slider"><label for="s-bass">bass</label><input type="range" id="s-bass" data-mix="bass" min="0" max="2" step="0.01" value="1"></div>
+    <div class="slider"><label for="s-beat">beat</label><input type="range" id="s-beat" data-mix="beat" min="0" max="2" step="0.01" value="1"></div>
+    <div class="slider"><label for="s-drone">drone</label><input type="range" id="s-drone" data-mix="drone" min="0" max="2" step="0.01" value="1"></div>
+    <div class="slider"><label for="s-reverb">reverb</label><input type="range" id="s-reverb" data-mix="reverb" min="0" max="2" step="0.01" value="1"></div>
+    <div class="slider"><label for="s-delay">delay</label><input type="range" id="s-delay" data-mix="delay" min="0" max="2" step="0.01" value="1"></div>
   </footer>
 
 <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
@@ -442,6 +462,8 @@ const state = {
 };
 state.char = makeCharacter(state.center.lat, state.center.lng);
 const params = { density: 0.75, rain: 0, wind: 0.1 };
+// mixer state — 0–2 multipliers set by the sliders, applied to every engine
+const mix = { melody: 1, chords: 1, bass: 1, beat: 1, drone: 1, reverb: 1, delay: 1 };
 
 const $ = (id) => document.getElementById(id);
 
@@ -525,6 +547,8 @@ function buildEngine(char, det) {
   const chord = { offset: 0 };   // current chord root offset, shared by all voices
   const harmony = { tones: [0] };// current chord's tones, read by the bassline
   let leadVerbNode = null;       // lead reverb send, modulated by time of day
+  // mixer taps — the sliders adjust these live (null when a part is absent)
+  let leadGainNode = null, padGainNode = null, bassGainNode = null, drumOutNode = null, drumBase = 0, leadDelayNode = null;
   // live, mutable arrangement — evolve() swaps these so the piece moves over time
   let songCell = char.cell, songProg = char.progression, songDrums = char.drums;
 
@@ -572,26 +596,31 @@ function buildEngine(char, det) {
      always move together. The chord root also drives the drones + bass. */
   {
     const eighth = () => (60 / Tone.Transport.bpm.value) / 2;
+    const padGain = track(new Tone.Gain(1).connect(reverb));
+    padGainNode = padGain;
     const pad = track(new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "triangle" },
       envelope: { attack: 0.8, decay: 1.8, sustain: 0.6, release: 3 },
       volume: -22,
-    }).connect(reverb));
+    }).connect(padGain));
 
     // lead lives inside the space: its own delay → shared reverb, a reverb send,
     // and only a whisper of dry signal so it blends rather than sits on top
     const leadDelay = track(new Tone.FeedbackDelay(char.leadDelayTime, char.leadDelayFb));
     leadDelay.wet.value = char.leadDelayWet;
     leadDelay.connect(reverb);
+    leadDelayNode = leadDelay;
     const leadVerb = track(new Tone.Gain(char.leadVerbAmt).connect(reverb));
     leadVerbNode = leadVerb;
     const leadDry = track(new Tone.Gain(char.leadDry).connect(filter));
+    const leadGain = track(new Tone.Gain(1));
+    leadGainNode = leadGain;
+    leadGain.connect(leadDelay); leadGain.connect(leadVerb); leadGain.connect(leadDry);
     const lead = track(new Tone.Synth({
       oscillator: { type: char.leadWave },
       envelope: { attack: 0.06, decay: 0.4, sustain: 0.4, release: 1.6 },
       volume: -22,
-    }));
-    lead.connect(leadDelay); lead.connect(leadVerb); lead.connect(leadDry);
+    }).connect(leadGain));
 
     const CS = char.chordSteps;
     let ladder = null, m = 0, hold = 0;
@@ -628,15 +657,17 @@ function buildEngine(char, det) {
   /* bassline — a low line walking the chord roots/fifths, filtered and blended
      low with a touch of the shared reverb so it sits under everything */
   {
+    const bassGain = track(new Tone.Gain(1).connect(filter));
+    bassGainNode = bassGain;
+    const bassVerbSend = track(new Tone.Gain(char.bassVerb).connect(reverb));
+    bassGain.connect(bassVerbSend);
     const bassSynth = track(new Tone.MonoSynth({
       oscillator: { type: char.bassWave },
       filter: { Q: 1, type: "lowpass", rolloff: -24 },
       filterEnvelope: { attack: 0.03, decay: 0.5, sustain: 0.35, release: 1.2, baseFrequency: 70, octaves: 2.2 },
       envelope: { attack: 0.02, decay: 0.4, sustain: 0.55, release: 1.4 },
       volume: -13,
-    }).connect(filter));
-    const bassVerbSend = track(new Tone.Gain(char.bassVerb).connect(reverb));
-    bassSynth.connect(bassVerbSend);
+    }).connect(bassGain));
     const pat = euclid(char.bassHits, 8, 0);
     const foldBass = (semi) => { let b = char.root - 12 + semi; while (b < 24) b += 12; while (b > 46) b -= 12; return b; };
     let bi = 0;
@@ -700,6 +731,7 @@ function buildEngine(char, det) {
        roll-off so it sounds like dusty sampled drums. Lo-fi amount decides how
        crushed and dark. A small dedicated reverb keeps beats defined. */
     const drumOut = track(new Tone.Gain(0.95 * char.beat).connect(filter));
+    drumOutNode = drumOut; drumBase = 0.95 * char.beat;
     const crush = track(new Tone.BitCrusher(Math.round(4 + (1 - char.lofi) * 8)).connect(drumOut));
     crush.wet.value = 0.3 + char.lofi * 0.6;
     const drumLP = track(new Tone.Filter(2200 + (1 - char.lofi) * 8800, "lowpass").connect(crush));
@@ -764,6 +796,18 @@ function buildEngine(char, det) {
   return {
     master, filter, windGain, air: char.air, brightBias: char.brightBias, lofi: char.lofi,
     leadVerb: leadVerbNode, leadVerbBase: char.leadVerbAmt,
+    /* Live mixer — each value is a 0–2 multiplier over the designed level. */
+    setMix(mix) {
+      const g = (node, v) => { if (node) node.gain.rampTo(v, 0.08); };
+      g(leadGainNode, mix.melody);
+      g(padGainNode, mix.chords);
+      g(bassGainNode, mix.bass);
+      g(drumOutNode, drumBase * mix.beat);
+      g(droneGain, char.droneLevel * mix.drone);
+      reverb.wet.rampTo(Math.min(1, char.reverbWet * mix.reverb), 0.15);
+      delay.wet.rampTo(Math.min(1, char.delayWet * mix.delay), 0.15);
+      if (leadDelayNode) leadDelayNode.wet.rampTo(Math.min(1, char.leadDelayWet * mix.delay), 0.15);
+    },
     /* A "movement": re-arrange the details while keeping the place's character.
        Called about once a minute so the piece never loops verbatim. */
     evolve() {
@@ -924,6 +968,7 @@ function travel(pos, title) {
     const eng = buildEngine(nc, makeDetails(nc));
     state.engine = eng;
     registerEngine(eng);
+    eng.setMix(mix);
     eng.master.gain.rampTo(0.9, 3.2);
   }
 }
@@ -967,6 +1012,7 @@ $("circle").addEventListener("click", async () => {
     const eng = buildEngine(state.char, makeDetails(state.char));
     state.engine = eng;
     registerEngine(eng);
+    eng.setMix(mix);
     eng.master.gain.rampTo(0.95, 1.2);
     state.playing = true;
     document.body.classList.add("playing");
@@ -1027,6 +1073,14 @@ $("q").addEventListener("keydown", (e) => {
 $("results").addEventListener("mousedown", (e) => e.preventDefault());
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".top")) $("results").classList.remove("open");
+});
+
+/* mixer — sliders adjust the live engine in real time */
+document.querySelectorAll("#mixer input[type=range]").forEach((sl) => {
+  sl.addEventListener("input", () => {
+    mix[sl.dataset.mix] = parseFloat(sl.value);
+    if (state.engine && state.engine.setMix) state.engine.setMix(mix);
+  });
 });
 
 /* ================================================================== */
