@@ -902,6 +902,16 @@ function buildEngine(char, det) {
     leadGainNode = leadGain;
     leadGain.connect(leadDelay); leadGain.connect(leadVerb); leadGain.connect(leadDry);
 
+    // halo — a soft shadow voice that doubles every fragment note an octave
+    // below (and sometimes whispers the note itself), swelling in just after
+    // the attack. Shares the fragments' wet routing, so each figure blooms
+    // out of the atmosphere like a layered synth patch, not a lone wave.
+    const halo = track(new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "fatsine", count: 3, spread: 22 },
+      envelope: { attack: 1.4, decay: 2.5, sustain: 0.45, release: 7 },
+      volume: -25,
+    }).connect(leadGain));
+
     // wind stirs the fragments awake; night thins them out
     const fragProb = () => Math.max(0.25, Math.min(0.95, 0.45 + params.density * 0.25 + params.wind * 0.25));
     songFrags.forEach((f) => {
@@ -913,7 +923,11 @@ function buildEngine(char, det) {
           const t = tones[note.tone % tones.length] + 12 * note.oct;
           let midi = rootNow + t + 12 * char.leadOct;
           while (midi > 84) midi -= 12; while (midi < 52) midi += 12;
-          play(Tone.Frequency(midi, "midi"), note.len, time + note.at);
+          const when = time + note.at;
+          play(Tone.Frequency(midi, "midi"), note.len, when);
+          const low = midi >= 60 ? midi - 12 : midi;   // octave shadow underneath
+          halo.triggerAttackRelease(Tone.Frequency(low, "midi"), note.len * 1.5, when + 0.06, 0.85);
+          if (Math.random() < 0.5) halo.triggerAttackRelease(Tone.Frequency(midi, "midi"), note.len * 1.2, when + 0.15, 0.35);
         });
       }, f.interval);
       loop.start(0.5 + Math.random() * 4);
