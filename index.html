@@ -78,22 +78,7 @@
   body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
   #hint { font-size: 9px; color: var(--faint); }
 
-  /* bottom — the mixer: a DAW-style rack of channel strips + DJ effects */
-  .controls { width: 100%; overflow-x: auto; overflow-y: hidden; }
-  .rack { display: flex; gap: 12px; justify-content: safe center; min-width: min-content; padding: 4px 8px 0; }
-  .strip { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: none; }
-  .pick {
-    width: 62px; max-width: 62px; height: 22px; background: transparent; border: 1px solid var(--line); border-radius: 4px;
-    color: var(--ink); font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.04em;
-    text-transform: uppercase; padding: 0 4px; cursor: pointer; text-align: center;
-  }
-  .pick option { background: var(--top); color: var(--ink); text-transform: none; }
-  .pickspacer { height: 22px; }
-  .fader { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 84px; accent-color: var(--ink); background: transparent; cursor: pointer; }
-  .strip label { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
-  .strip.fx label { color: var(--ink); opacity: 0.6; }
-  .divider { width: 1px; align-self: stretch; background: var(--line); margin: 0 3px; }
-  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
   @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -118,9 +103,6 @@
     <div id="hint" class="mono">tap to listen</div>
   </main>
 
-  <footer class="controls" aria-label="Mixer">
-    <div class="rack" id="rack"></div>
-  </footer>
 
 <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
 <script>
@@ -1304,49 +1286,6 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".top")) $("results").classList.remove("open");
 });
 
-/* mixer — build the DAW rack: a channel strip (dropdown + vertical fader) per
-   part, then DJ-effect faders. Faders adjust the live engine; dropdowns rebuild. */
-function makeFader(key, min, max, val) {
-  const f = document.createElement("input");
-  f.type = "range"; f.className = "fader"; f.dataset.mix = key;
-  f.min = min; f.max = max; f.step = 0.01; f.value = val;
-  f.autocomplete = "off";                 // don't let the browser restore stale positions
-  f.setAttribute("aria-label", key);
-  f.addEventListener("input", () => {
-    mix[key] = parseFloat(f.value);
-    if (state.engine && state.engine.setMix) state.engine.setMix(mix);
-  });
-  return f;
-}
-function buildMixer() {
-  const rack = $("rack");
-  const frag = document.createDocumentFragment();
-  CHANNELS.forEach((ch) => {
-    const strip = document.createElement("div"); strip.className = "strip";
-    if (ch.opts) {
-      const sel = document.createElement("select"); sel.className = "pick"; sel.autocomplete = "off"; sel.setAttribute("aria-label", ch.key + " type");
-      ch.opts.forEach((o) => { const op = document.createElement("option"); op.value = o; op.textContent = o; sel.appendChild(op); });
-      sel.addEventListener("change", () => { picks[ch.key] = sel.value; rebuildEngine(); });
-      strip.appendChild(sel);
-    } else {
-      const spacer = document.createElement("div"); spacer.className = "pickspacer";
-      strip.appendChild(spacer);
-    }
-    const lab = document.createElement("label"); lab.textContent = ch.key;
-    strip.append(makeFader(ch.key, 0, 2, 1), lab);
-    frag.appendChild(strip);
-  });
-  const div = document.createElement("div"); div.className = "divider"; frag.appendChild(div);
-  FX_CHANNELS.forEach((key) => {
-    const strip = document.createElement("div"); strip.className = "strip fx";
-    const spacer = document.createElement("div"); spacer.className = "pickspacer";
-    const lab = document.createElement("label"); lab.textContent = key;
-    strip.append(spacer, makeFader(key, 0, 1, key === "filter" ? 0.5 : 0), lab);
-    frag.appendChild(strip);
-  });
-  rack.appendChild(frag);
-}
-buildMixer();
 
 /* ================================================================== */
 /* Boot                                                                */
