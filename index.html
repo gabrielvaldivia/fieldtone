@@ -290,17 +290,32 @@ function makeCharacter(lat, lng) {
   const leadOct = 1 + Math.floor(rng() * 2);                 // melody register above the root
   const padOct = 0;
   const leadWave = ["triangle", "sine", "square", "sawtooth", "fmsine", "pwm"][Math.floor(rng() * 6)];
-  const melodyRest = 0.22 + rng() * 0.4;                     // how spacious the tune is
+  const melodyRest = 0.55 + rng() * 0.32;                    // sparse: only 13–45% of steps sound
   // the motif: one rhythmic/contour cell, walked stepwise over the chord's tones
-  // and re-voiced on every chord, so the same tune "follows the changes"
+  // and re-voiced on every chord, so the same tune "follows the changes".
+  // notes hold for their full duration (played as silence after), so the tune breathes.
   const ladderN = (seventh ? 4 : 3) * 2;
   const cell = [];
   let cur = 0;
   for (let s = 0; s < chordSteps; s++) {
     cur = Math.max(0, Math.min(ladderN - 1, cur + (Math.floor(rng() * 5) - 2)));
-    cell.push({ play: rng() > melodyRest, step: cur, oct: rng() < 0.15 ? 1 : 0, dur: rng() < 0.3 ? 2 : 1 });
+    const dr = rng(); const dur = dr < 0.4 ? 1 : dr < 0.75 ? 2 : dr < 0.92 ? 3 : 4;
+    cell.push({ play: rng() > melodyRest, step: cur, oct: rng() < 0.12 ? 1 : 0, dur });
   }
   cell[0].play = true; cell[0].step = 0;                     // land on the chord root each bar
+
+  // lead sits INSIDE the atmosphere — mostly wet, its own delay + reverb send,
+  // amounts unique to the place (and modulated by time of day at play)
+  const leadVerbAmt = 0.4 + rng() * 0.55;
+  const leadDelayTime = 0.16 + rng() * 0.5;
+  const leadDelayFb = 0.2 + rng() * 0.45;
+  const leadDelayWet = 0.32 + rng() * 0.55;
+  const leadDry = 0.08 + rng() * 0.12;                       // just a whisper of dry signal
+
+  // bassline — a low line that walks the chord roots/fifths, blended low
+  const bassHits = 2 + Math.floor(rng() * 4);                // 2–5 notes per bar
+  const bassStyle = ["root", "root", "octave", "fifth", "walk"][Math.floor(rng() * 5)];
+  const bassVerb = 0.08 + rng() * 0.26;
 
   // rhythm identity
   const kit = KITS[Math.floor(rng() * KITS.length)];
@@ -318,8 +333,10 @@ function makeCharacter(lat, lng) {
     reverbDecay, reverbWet, delayTime, delayFb, delayWet, brightBias, detune,
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
-    arp, arpRate, arpLen, arpOct, arpWave, arpUp, bass, bassPulse, bassWave,
+    arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
     seventh, progression, chordSteps, leadOct, padOct, leadWave, cell,
+    leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
+    bassHits, bassStyle, bassVerb,
     kit, kickSteps, kickHits, hatSteps, hatHits, bellSteps, kickNote, air, airHz, swing };
 }
 
@@ -440,7 +457,9 @@ function buildEngine(char, det) {
   const nodes = [];
   const loops = [];
   const track = (n) => (nodes.push(n), n);
-  const chord = { offset: 0 };   // slow harmonic movement, shared by all voices
+  const chord = { offset: 0 };   // current chord root offset, shared by all voices
+  const harmony = { tones: [0] };// current chord's tones, read by the bassline
+  let leadVerbNode = null;       // lead reverb send, modulated by time of day
 
   // master chain ends in a limiter so driven / dense / bit-crushed places
   // can push hard without clipping, while clean places pass through untouched
@@ -484,25 +503,34 @@ function buildEngine(char, det) {
     const eighth = () => (60 / Tone.Transport.bpm.value) / 2;
     const pad = track(new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "triangle" },
-      envelope: { attack: 0.6, decay: 1.5, sustain: 0.65, release: 2.6 },
-      volume: -21,
+      envelope: { attack: 0.8, decay: 1.8, sustain: 0.6, release: 3 },
+      volume: -22,
     }).connect(reverb));
-    const leadGain = track(new Tone.Gain(0.85).connect(delay));
+
+    // lead lives inside the space: its own delay → shared reverb, a reverb send,
+    // and only a whisper of dry signal so it blends rather than sits on top
+    const leadDelay = track(new Tone.FeedbackDelay(char.leadDelayTime, char.leadDelayFb));
+    leadDelay.wet.value = char.leadDelayWet;
+    leadDelay.connect(reverb);
+    const leadVerb = track(new Tone.Gain(char.leadVerbAmt).connect(reverb));
+    leadVerbNode = leadVerb;
+    const leadDry = track(new Tone.Gain(char.leadDry).connect(filter));
     const lead = track(new Tone.Synth({
       oscillator: { type: char.leadWave },
-      envelope: { attack: 0.02, decay: 0.22, sustain: 0.32, release: 0.55 },
-      volume: -13,
-    }).connect(leadGain));
-    lead.connect(filter);                      // some dry signal so the tune reads on top
+      envelope: { attack: 0.06, decay: 0.4, sustain: 0.4, release: 1.6 },
+      volume: -22,
+    }));
+    lead.connect(leadDelay); lead.connect(leadVerb); lead.connect(leadDry);
 
     const prog = char.progression, cell = char.cell, CS = char.chordSteps;
-    let ladder = null, m = 0;
+    let ladder = null, m = 0, hold = 0;
     const song = new Tone.Loop((time) => {
       const pos = m % CS;
       if (pos === 0) {                         // new chord
         const di = prog[Math.floor(m / CS) % prog.length];
         const tones = triad(char.scale, di, char.seventh);
         chord.offset = tones[0];               // drones + bass follow the changes
+        harmony.tones = tones;
         ladder = tones.concat(tones.map((t) => t + 12)).sort((a, b) => a - b);
         const freqs = tones.map((t) => {
           let pm = char.root + t + 12 * char.padOct;
@@ -512,11 +540,13 @@ function buildEngine(char, det) {
         pad.triggerAttackRelease(freqs, eighth() * CS * 1.02, time);
       }
       const cs = cell[pos % cell.length];
+      if (hold > 0) { hold--; m++; return; }   // let long notes ring — keeps the tune sparse
       if (cs.play && ladder) {
         const t = ladder[Math.max(0, Math.min(ladder.length - 1, cs.step))];
         let midi = char.root + t + 12 * (char.leadOct + cs.oct);
         while (midi > 96) midi -= 12; while (midi < 48) midi += 12;  // fold, never retune
-        lead.triggerAttackRelease(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.9, time);
+        lead.triggerAttackRelease(Tone.Frequency(midi, "midi"), eighth() * cs.dur * 0.95, time);
+        hold = cs.dur - 1;
       }
       m++;
     }, "8n");
@@ -524,31 +554,37 @@ function buildEngine(char, det) {
     loops.push(song);
   }
 
-  /* bass — weight for places that want it; sustained pad or pulsing root */
-  if (char.bass) {
+  /* bassline — a low line walking the chord roots/fifths, filtered and blended
+     low with a touch of the shared reverb so it sits under everything */
+  {
     const bassSynth = track(new Tone.MonoSynth({
       oscillator: { type: char.bassWave },
       filter: { Q: 1, type: "lowpass", rolloff: -24 },
-      filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 1.2, baseFrequency: 80, octaves: 2.5 },
-      envelope: char.bassPulse
-        ? { attack: 0.006, decay: 0.35, sustain: 0.2, release: 0.3 }
-        : { attack: 0.8, decay: 0.5, sustain: 0.85, release: 6 },
-      volume: -8,
+      filterEnvelope: { attack: 0.03, decay: 0.5, sustain: 0.35, release: 1.2, baseFrequency: 70, octaves: 2.2 },
+      envelope: { attack: 0.02, decay: 0.4, sustain: 0.55, release: 1.4 },
+      volume: -13,
     }).connect(filter));
-    const bassMidi = () => { let b = char.root - 12 + chord.offset; while (b < 24) b += 12; while (b > 48) b -= 12; return b; };
-    if (char.bassPulse) {
-      const bl = new Tone.Loop((time) => {
-        bassSynth.triggerAttackRelease(Tone.Frequency(bassMidi(), "midi"), "8n", time);
-      }, "4n");
-      bl.start(0);
-      loops.push(bl);
-    } else {
-      const bl = new Tone.Loop((time) => {
-        bassSynth.triggerAttackRelease(Tone.Frequency(bassMidi(), "midi"), "1m", time);
-      }, "2m");
-      bl.start(0);
-      loops.push(bl);
-    }
+    const bassVerbSend = track(new Tone.Gain(char.bassVerb).connect(reverb));
+    bassSynth.connect(bassVerbSend);
+    const pat = euclid(char.bassHits, 8, 0);
+    const foldBass = (semi) => { let b = char.root - 12 + semi; while (b < 24) b += 12; while (b > 46) b -= 12; return b; };
+    let bi = 0;
+    const bl = new Tone.Loop((time) => {
+      const onBeat = bi % 8 === 0;
+      if (!onBeat && !pat[bi % 8]) { bi++; return; }
+      const t = harmony.tones;
+      let semi = t[0];                                   // default: the chord root
+      if (!onBeat) {
+        if (char.bassStyle === "octave") semi = t[0] + (bi % 2 ? 12 : 0);
+        else if (char.bassStyle === "fifth") semi = (t[2] != null ? t[2] : t[0]);
+        else if (char.bassStyle === "walk") semi = t[(bi >> 1) % t.length];
+      }
+      const dur = onBeat ? "4n" : "8n";
+      bassSynth.triggerAttackRelease(Tone.Frequency(foldBass(semi), "midi"), dur, time, onBeat ? 0.9 : 0.6);
+      bi++;
+    }, "8n");
+    bl.start(0);
+    loops.push(bl);
   }
 
   const bloom = track(new Tone.PolySynth(Tone.Synth, {
@@ -667,6 +703,7 @@ function buildEngine(char, det) {
 
   return {
     master, filter, windGain, air: char.air, brightBias: char.brightBias,
+    leadVerb: leadVerbNode, leadVerbBase: char.leadVerbAmt,
     dispose() {
       loops.forEach((l) => l.dispose());
       nodes.forEach((n) => { try { n.dispose(); } catch (e) {} });
@@ -705,6 +742,8 @@ function applyConditions() {
   if (e) {
     e.filter.frequency.rampTo(Math.min(9000, (360 + d * 2200 + (state.weather.temp - 10) * 20) * e.brightBias), 2);
     e.windGain.gain.rampTo(e.air + state.weather.wind * 0.1, 3);
+    // lead washes further into reverb at night, pulls forward a touch by day
+    if (e.leadVerb) e.leadVerb.gain.rampTo(e.leadVerbBase * (0.7 + (1 - d) * 0.7), 3);
   }
   applySky(hour);
   const hh = Math.floor(hour), mm = Math.floor((hour - hh) * 60);
