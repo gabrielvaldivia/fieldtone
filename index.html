@@ -338,6 +338,14 @@ function genDrums(kit, rng) {
     K[0] = 1; if (rng() < 0.6) K[8] = 1; if (rng() < 0.3) K[11] = 1;
     S[4] = S[12] = 1;
     for (let i = 0; i < 16; i += 2) H[i] = 1;
+  } else if (kit === "trap") {                          // half-time snare, rolling 16th hats
+    K[0] = 1; if (rng() < 0.6) K[6] = 1; if (rng() < 0.5) K[10] = 1; if (rng() < 0.4) K[3] = 1; if (rng() < 0.4) K[11] = 1;
+    S[8] = 1;                                            // backbeat on beat 3 (half-time)
+    for (let i = 0; i < 16; i++) H[i] = 1;               // constant 16ths (rolls come from velocity)
+  } else if (kit === "break") {                         // syncopated breakbeat (jungle/dnb)
+    K[0] = 1; K[10] = 1; if (rng() < 0.5) K[6] = 1;
+    S[4] = 1; S[12] = 1; if (rng() < 0.5) S[7] = 1; if (rng() < 0.5) S[14] = 1;
+    for (let i = 0; i < 16; i += 2) H[i] = 1;
   }
   return { K, S, H };
 }
@@ -396,20 +404,42 @@ const GENRES = {
   balkan:       { tempo: [100, 150], beat: 0.8,  kit: "boombap", swing: [0.04, 0.14], lofi: [0.15, 0.5], verb: [1.8, 4],  drone: 0.4,  droneChance: 0.35, seventh: 0.4,  crackle: 0.25, leads: ["reed", "pwm", "pluck", "duo"], scales: ["harmMin", "phrygDom", "aeolian", "dblHarm"], drums: ["acoustic", "vinyl"] },
   lofi:         { tempo: [70, 92],   beat: 0.9,  kit: "boombap", swing: [0.1, 0.2],   lofi: [0.5, 0.9],  verb: [1.8, 4],  drone: 0.55, droneChance: 0.35, seventh: 0.85, crackle: 0.8,  leads: ["rhodes", "soft", "glass", "bell"], scales: ["dorian", "aeolian", "minPent", "majPent"], drums: ["vinyl", "tape"] },
   ambient:      { tempo: [48, 78],   beat: 0.0,  kit: "none",    swing: [0, 0.02],    lofi: [0, 0.4],    verb: [6, 13],   drone: 1.0,  droneChance: 1.0,  seventh: 0.4,  crackle: 0.1,  leads: ["glass", "soft", "bell", "chime"], scales: ["lydian", "wholeTone", "aeolian", "dorian"], drums: ["clean"] },
+  // — regional sub-genres —
+  trap:         { tempo: [132, 152], beat: 1.0,  kit: "trap",    swing: [0, 0.04],    lofi: [0.1, 0.45], verb: [1.5, 3.5], drone: 0.4, droneChance: 0.25, seventh: 0.4,  crackle: 0.15, leads: ["bell", "synth", "pwm", "glass"], scales: ["aeolian", "harmMin", "phryg", "minPent"], drums: ["808", "trap"] },
+  gfunk:        { tempo: [88, 104],  beat: 1.0,  kit: "boombap", swing: [0.08, 0.18], lofi: [0.2, 0.6],  verb: [1.6, 3.8], drone: 0.4, droneChance: 0.25, seventh: 0.6,  crackle: 0.4,  leads: ["pwm", "synth", "rhodes", "soft"], scales: ["minPent", "dorian", "aeolian", "blues"], drums: ["vinyl", "808", "tape"] },
+  bossa:        { tempo: [110, 140], beat: 0.7,  kit: "brush",   swing: [0.06, 0.16], lofi: [0.1, 0.4],  verb: [1.6, 3.5], drone: 0.3, droneChance: 0.15, seventh: 0.95, crackle: 0.25, leads: ["pluck", "rhodes", "soft", "koto"], scales: ["dorian", "melMin", "majPent", "ionian"], drums: ["acoustic", "clean", "vinyl"] },
+  tango:        { tempo: [96, 120],  beat: 0.75, kit: "brush",   swing: [0.02, 0.1],  lofi: [0.1, 0.4],  verb: [1.8, 4],  drone: 0.35, droneChance: 0.2, seventh: 0.6,  crackle: 0.2,  leads: ["reed", "pluck", "duo", "soft"], scales: ["harmMin", "aeolian", "melMin", "phrygDom"], drums: ["acoustic", "clean"] },
+  andean:       { tempo: [86, 112],  beat: 0.6,  kit: "brush",   swing: [0.02, 0.1],  lofi: [0.1, 0.45], verb: [2.5, 6],  drone: 0.5,  droneChance: 0.5,  seventh: 0.3,  crackle: 0.2,  leads: ["soft", "glass", "reed", "pluck"], scales: ["minPent", "majPent", "aeolian", "dorian"], drums: ["acoustic", "clean"] },
+  salsa:        { tempo: [96, 120],  beat: 0.95, kit: "boombap", swing: [0.04, 0.12], lofi: [0.1, 0.4],  verb: [1.5, 3.5], drone: 0.3, droneChance: 0.15, seventh: 0.85, crackle: 0.2,  leads: ["pluck", "bell", "rhodes", "reed"], scales: ["dorian", "harmMin", "mixo", "aeolian"], drums: ["acoustic", "clean"] },
+  amapiano:     { tempo: [108, 116], beat: 0.9,  kit: "four",    swing: [0.06, 0.14], lofi: [0.1, 0.4],  verb: [2, 5],    drone: 0.4,  droneChance: 0.3,  seventh: 0.7,  crackle: 0.2,  leads: ["rhodes", "soft", "bell", "glass"], scales: ["dorian", "aeolian", "minPent", "majPent"], drums: ["clean", "808", "vinyl"] },
+  desertblues:  { tempo: [92, 116],  beat: 0.75, kit: "boombap", swing: [0.06, 0.16], lofi: [0.2, 0.6],  verb: [1.8, 4.5], drone: 0.55, droneChance: 0.5, seventh: 0.4,  crackle: 0.3,  leads: ["pluck", "reed", "koto", "soft"], scales: ["dorian", "minPent", "aeolian", "phryg"], drums: ["acoustic", "vinyl", "tape"] },
+  country:      { tempo: [84, 120],  beat: 0.7,  kit: "brush",   swing: [0.06, 0.14], lofi: [0.1, 0.4],  verb: [1.6, 3.5], drone: 0.25, droneChance: 0.12, seventh: 0.4, crackle: 0.25, leads: ["pluck", "square", "soft", "reed"], scales: ["ionian", "mixo", "majPent", "dorian"], drums: ["acoustic", "clean"] },
+  dnb:          { tempo: [165, 175], beat: 1.0,  kit: "break",   swing: [0, 0.04],    lofi: [0.1, 0.4],  verb: [1.8, 4],  drone: 0.4,  droneChance: 0.3,  seventh: 0.5,  crackle: 0.15, leads: ["synth", "pwm", "bell", "rhodes"], scales: ["aeolian", "dorian", "minPent", "harmMin"], drums: ["808", "clean"] },
+  kpop:         { tempo: [110, 128], beat: 1.0,  kit: "four",    swing: [0.02, 0.1],  lofi: [0.05, 0.35],verb: [1.6, 3.8], drone: 0.35, droneChance: 0.25, seventh: 0.6, crackle: 0.1,  leads: ["bell", "synth", "pluck", "glass"], scales: ["ionian", "majPent", "mixo", "dorian"], drums: ["808", "clean"] },
 };
 
 /* Representative points across the world; a location takes the nearest one's genre. */
 const GENRE_ANCHORS = [
-  [35.7, 139.7, "cyberpunk"], [37.5, 127, "cyberpunk"], [22.3, 114.2, "cyberpunk"], [31.2, 121.5, "cyberpunk"], [25, 121.5, "cyberpunk"],
+  [35.7, 139.7, "cyberpunk"], [22.3, 114.2, "cyberpunk"], [31.2, 121.5, "cyberpunk"], [25, 121.5, "cyberpunk"],
+  [37.5, 127, "kpop"], [35.2, 129, "kpop"],
   [39.9, 116.4, "eastasian"], [30.6, 104, "eastasian"], [13.8, 100.5, "eastasian"], [14.6, 121, "eastasian"], [21, 105.8, "eastasian"], [23.1, 113.3, "eastasian"],
-  [40.7, -74, "hiphop"], [34, -118.2, "hiphop"], [42.3, -71, "hiphop"], [40, -75.2, "hiphop"], [39.3, -76.6, "hiphop"], [38.9, -77, "hiphop"],
-  [36.2, -86.8, "bluegrass"], [35.6, -82.5, "bluegrass"], [38.2, -85.7, "bluegrass"], [34.7, -92.3, "bluegrass"], [30.3, -97.7, "bluegrass"], [33.7, -84.4, "bluegrass"],
-  [41.9, -87.6, "blues"], [35.1, -90, "blues"], [32.3, -90.2, "blues"],
+  [40.7, -74, "hiphop"], [42.3, -71, "hiphop"], [40, -75.2, "hiphop"], [39.3, -76.6, "hiphop"], [38.9, -77, "hiphop"],
+  [34, -118.2, "gfunk"], [33.77, -118.19, "gfunk"], [37.8, -122.27, "gfunk"],
+  [33.75, -84.39, "trap"], [29.76, -95.37, "trap"], [35.1, -90, "trap"],
+  [36.2, -86.8, "bluegrass"], [35.6, -82.5, "bluegrass"], [38.2, -85.7, "bluegrass"], [34.7, -92.3, "bluegrass"],
+  [30.27, -97.74, "country"], [32.78, -96.8, "country"], [35.47, -97.5, "country"],
+  [41.9, -87.6, "blues"], [32.3, -90.2, "blues"],
   [30, -90, "jazz"],
   [42.3, -83, "techno"], [52.5, 13.4, "techno"],
   [48.9, 2.4, "house"], [38.9, 1.4, "house"], [52.4, 4.9, "house"],
-  [6.5, 3.4, "afrobeat"], [5.6, -0.2, "afrobeat"], [-1.3, 36.8, "afrobeat"], [9, 38.7, "afrobeat"], [-4.3, 15.3, "afrobeat"], [14.7, -17.4, "afrobeat"], [-26.2, 28, "afrobeat"],
-  [-22.9, -43.2, "latin"], [19.4, -99.1, "latin"], [23, -82, "latin"], [-12, -77, "latin"], [-34.6, -58.4, "latin"], [4.7, -74, "latin"], [-23.5, -46.6, "latin"], [25.8, -80.2, "latin"],
+  [6.5, 3.4, "afrobeat"], [5.6, -0.2, "afrobeat"], [-1.3, 36.8, "afrobeat"], [9, 38.7, "afrobeat"], [-4.3, 15.3, "afrobeat"], [14.7, -17.4, "afrobeat"],
+  [-26.2, 28, "amapiano"], [-33.92, 18.42, "amapiano"], [-29.86, 31.02, "amapiano"],
+  [12.6, -8, "desertblues"], [16.77, -3, "desertblues"], [13.5, 2.1, "desertblues"],
+  [19.4, -99.1, "latin"], [4.7, -74, "latin"], [25.8, -80.2, "latin"], [10.5, -66.9, "latin"],
+  [-22.9, -43.2, "bossa"], [-23.5, -46.6, "bossa"], [-12.97, -38.5, "bossa"],
+  [-34.6, -58.4, "tango"], [-34.9, -56.2, "tango"],
+  [-12, -77, "andean"], [-16.5, -68.15, "andean"], [-13.5, -71.97, "andean"], [-0.18, -78.47, "andean"],
+  [23, -82, "salsa"], [18.5, -66.1, "salsa"], [3.44, -76.52, "salsa"],
   [40.4, -3.7, "flamenco"], [37.4, -6, "flamenco"],
   [38, 23.7, "mediterranean"], [41.9, 12.5, "mediterranean"], [38.7, -9.1, "mediterranean"], [40.8, 14.3, "mediterranean"], [41.4, 2.2, "mediterranean"],
   [30, 31.2, "middleeastern"], [41, 29, "middleeastern"], [31.6, -8, "middleeastern"], [35.7, 51.4, "middleeastern"], [24.7, 46.7, "middleeastern"], [25.2, 55.3, "middleeastern"], [33.3, 44.4, "middleeastern"],
@@ -418,9 +448,10 @@ const GENRE_ANCHORS = [
   [64.1, -21.9, "nordic"], [59.9, 10.8, "nordic"], [59.3, 18, "nordic"], [60.2, 25, "nordic"], [55.7, 12.6, "nordic"],
   [53.3, -6.3, "celtic"], [55.9, -3.2, "celtic"], [55.9, -4.3, "celtic"],
   [48.2, 16.4, "classical"], [48.1, 11.6, "classical"], [47.5, 19, "classical"], [50.1, 14.4, "classical"],
-  [18, -76.8, "island"], [21.3, -157.9, "island"], [18.5, -66.1, "island"], [-18, 178, "island"], [25, -77.4, "island"],
+  [18, -76.8, "island"], [21.3, -157.9, "island"], [-18, 178, "island"], [25, -77.4, "island"],
   [55.8, 37.6, "balkan"], [50.4, 30.5, "balkan"], [44.8, 20.5, "balkan"], [44.4, 26.1, "balkan"],
-  [51.5, -0.1, "lofi"], [-33.9, 151.2, "lofi"], [-37.8, 145, "lofi"], [49.3, -123, "lofi"], [43.7, -79.4, "lofi"], [47.6, -122.3, "lofi"], [37.8, -122.4, "lofi"], [45.5, -122.7, "lofi"],
+  [51.5, -0.1, "dnb"], [51.45, -2.6, "dnb"], [53.48, -2.24, "dnb"],
+  [-33.9, 151.2, "lofi"], [-37.8, 145, "lofi"], [49.3, -123, "lofi"], [43.7, -79.4, "lofi"], [47.6, -122.3, "lofi"], [37.8, -122.4, "lofi"], [45.5, -122.7, "lofi"],
   [23, 15, "ambient"], [-25, 135, "ambient"], [66, 100, "ambient"], [-78, 0, "ambient"], [5, -30, "ambient"], [10, -160, "ambient"], [-48, -72, "ambient"], [72, -40, "ambient"], [33, 80, "ambient"], [-23, 22, "ambient"], [-4, -63, "ambient"],
 ];
 
@@ -463,6 +494,10 @@ const GENRE_PROGS = {
   nordic: ["static", "vamp", "minorpop"], celtic: ["folk", "pop1", "pop4"], classical: ["canon", "pop1", "folk"],
   island: ["pop1", "doowop", "folk"], balkan: ["andalusian", "minorpop", "minor1"], lofi: ["jazz1625", "minorpop", "doowop"],
   ambient: ["static", "vamp", "minorpop"],
+  trap: ["minorpop", "minor1", "vamp", "andalusian"], gfunk: ["jazz1625", "doowop", "minorpop", "vamp"],
+  bossa: ["jazz251", "jazz1625", "canon"], tango: ["andalusian", "minor1", "jazz251"], andean: ["vamp", "folk", "pop4", "static"],
+  salsa: ["jazz251", "jazz1625", "pop2"], amapiano: ["jazz1625", "doowop", "vamp", "pop1"], desertblues: ["vamp", "static", "minorpop"],
+  country: ["folk", "pop1", "pop4", "doowop"], dnb: ["minorpop", "minor1", "vamp"], kpop: ["pop1", "doowop", "pop2", "jazz1625"],
 };
 
 /* Melodic phrasing: motif CONTOURS (stepwise scale-step offsets, starting on a
