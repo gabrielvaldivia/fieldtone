@@ -192,13 +192,25 @@ const PALETTES = [
   // plucked / struck
   { id: "koto",    mood: "koto",     bias:  5, vol: -14, atk: 0.0, len: 0.50, kind: "pluck" },
   { id: "metal",   mood: "metallic", bias:  8, vol: -26, atk: 0.0, len: 0.50, kind: "metal", harm: 2.01, index: 20 },
+  // — cyberpunk / aggressive (drive hard, bright, edged) —
+  { id: "acid",    mood: "acid",     bias:  0, vol: -20, atk: 0.05,len: 0.45, kind: "mono", osc: { type: "sawtooth" }, dirt: 0.5 },
+  { id: "neon",    mood: "neon",     bias:  5, vol: -18, atk: 0.3, len: 0.5,  osc: { type: "pwm" },        dirt: 0.35 },
+  { id: "rasp",    mood: "rasp",     bias:  2, vol: -22, atk: 0.6, len: 0.55, osc: { type: "fatsquare" },  dirt: 0.4, lp: [900, 3200] },
+  { id: "chrome",  mood: "chrome",   bias:  6, vol: -19, atk: 0.4, len: 0.5,  kind: "fm", harm: 2.5, index: 16, dirt: 0.3 },
+  { id: "industrial", mood: "industrial", bias: -1, vol: -21, atk: 0.5, len: 0.55, osc: { type: "fatsawtooth" }, dirt: 0.6, lp: [500, 2400] },
+  { id: "grime",   mood: "grime",    bias: -6, vol: -16, atk: 0.4, len: 0.6,  kind: "mono", osc: { type: "square" }, dirt: 0.55 },
+  // — soft / intimate (clean, slow, felt) —
+  { id: "felt",    mood: "felt",     bias: -2, vol: -14, atk: 2.2, len: 0.75, osc: { type: "sine" } },
+  { id: "breath",  mood: "breath",   bias:  1, vol: -19, atk: 2.6, len: 0.78, osc: { type: "fattriangle" } },
+  { id: "dust",    mood: "dust",     bias: -3, vol: -17, atk: 2.0, len: 0.72, kind: "am", harm: 1.5, lp: [400, 900] },
+  { id: "velvet",  mood: "velvet",   bias: -4, vol: -13, atk: 2.4, len: 0.76, osc: { type: "fatsine" } },
 ];
 
 const KITS = ["pulse", "dub", "tickle", "tribal", "house", "broken"];
 
 /* Per-place colour effect inserted across the drone bus — a big multiplier on feel.
    "none" weighted twice so roughly a third of places stay uncoloured. */
-const FXS = ["none", "none", "chorus", "phaser", "tremolo", "vibrato", "autofilter", "chebyshev"];
+const FXS = ["none", "none", "chorus", "phaser", "tremolo", "vibrato", "autofilter", "chebyshev", "bitcrush"];
 
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
@@ -212,8 +224,8 @@ function makeCharacter(lat, lng) {
   const root = 41 + Math.floor(rng() * 12) + palette.bias;   // register bias per palette
   const r = rng();
   const rhythm = r < 0.28 ? 0 : 0.3 + rng() * 0.7;
-  const tempo = 48 + Math.floor(rng() * 46);                 // 48–93
-  const voices = 3 + Math.floor(rng() * 5);                  // 3–7
+  const tempo = 40 + Math.floor(rng() * 84);                 // 40–123, techno to dirge
+  const voices = 2 + Math.floor(rng() * 6);                  // 2–7
 
   // the "space" — this is what makes an intimate room feel unlike a cathedral
   const reverbDecay = 2.6 + rng() * 10.5;                    // 2.6–13 s
@@ -234,6 +246,29 @@ function makeCharacter(lat, lng) {
   // per-place colour effect across the whole drone
   const fx = FXS[Math.floor(rng() * FXS.length)];
   const fxParams = { rate: 0.08 + rng() * 3, depth: 0.3 + rng() * 0.6, amt: rng() };
+
+  // grit — distortion/edge on the drone bus. Cyberpunk places drive hard,
+  // soft places stay clean. Palette can bias toward dirt.
+  const drive = Math.max(0, Math.min(0.9, (palette.dirt || 0) + rng() * rng() * 0.85 - 0.12));
+
+  // structure & motion — this is what makes forms differ, not just timbres
+  const motion = [0.35, 0.55, 0.8, 1, 1.4, 2.0, 2.8][Math.floor(rng() * 7)]; // glacial ↔ lively
+  const activity = 0.2 + rng() * rng() * 1.3;                // sparse ↔ dense note triggering
+  const regSpread = 1 + Math.floor(rng() * 4);               // octave span across voices
+  const octBase = [-2, -1, 0, 0, 1][Math.floor(rng() * 5)];  // register centre
+
+  // some places sing a melodic arpeggio instead of pure drift
+  const arp = rng() < 0.34;
+  const arpRate = ["4n", "8n", "8n", "8t", "16n"][Math.floor(rng() * 5)];
+  const arpLen = 3 + Math.floor(rng() * 6);
+  const arpOct = 1 + Math.floor(rng() * 2);
+  const arpWave = ["triangle", "sawtooth", "square", "sine"][Math.floor(rng() * 4)];
+  const arpUp = rng() < 0.6;                                  // sorted motif vs free order
+
+  // bass presence — weight vs air
+  const bass = rng() < 0.55;
+  const bassPulse = rng() < 0.5;
+  const bassWave = ["sine", "triangle", "sawtooth", "square"][Math.floor(rng() * 4)];
 
   // slow harmonic movement — some places evolve, some stay rooted
   const moving = rng() < 0.45 && scale.ints.length >= 5;
@@ -259,7 +294,9 @@ function makeCharacter(lat, lng) {
 
   return { key, scale, palette, root, rhythm, tempo, voices,
     reverbDecay, reverbWet, delayTime, delayFb, delayWet, brightBias, detune,
-    fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams,
+    fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
+    motion, activity, regSpread, octBase,
+    arp, arpRate, arpLen, arpOct, arpWave, arpUp, bass, bassPulse, bassWave,
     moving, prog, chordDwell,
     kit, kickSteps, kickHits, hatSteps, hatHits, bellSteps, kickNote, air, airHz, swing };
 }
@@ -269,8 +306,8 @@ function makeDetails(char) {
   const voices = [];
   for (let i = 0; i < char.voices; i++) {
     voices.push({
-      interval: 5 + rng() * 15,
-      octave: [-1, 0, 0, 1, 1, 2][Math.floor(rng() * 6)],
+      interval: Math.max(1.5, Math.min(42, (4 + rng() * 12) / char.motion)),
+      octave: char.octBase + Math.floor(rng() * (char.regSpread + 1)),
       degrees: [0, 0, 0, 0].map(() => Math.floor(rng() * char.scale.ints.length)),
       attack: (2.2 + rng() * 3.2) * char.palette.atk,
       bright: rng(),
@@ -372,6 +409,7 @@ function makeFX(char, track) {
     case "vibrato":    return track(new Tone.Vibrato(1 + p.rate * 2, 0.02 + p.amt * 0.06));
     case "autofilter": { const n = new Tone.AutoFilter({ frequency: 0.05 + p.rate * 0.2, baseFrequency: 220, octaves: 3 }).start(); n.wet.value = 0.6; return track(n); }
     case "chebyshev":  { const n = new Tone.Chebyshev(2 + Math.floor(p.amt * 3)); n.wet.value = 0.12 + p.amt * 0.18; return track(n); }
+    case "bitcrush":   { const n = new Tone.BitCrusher(3 + Math.floor(p.amt * 5)); n.wet.value = 0.2 + p.amt * 0.35; return track(n); }
     default:           return null;
   }
 }
@@ -382,29 +420,89 @@ function buildEngine(char, det) {
   const track = (n) => (nodes.push(n), n);
   const chord = { offset: 0 };   // slow harmonic movement, shared by all voices
 
-  const master = track(new Tone.Gain(0).toDestination());
+  // master chain ends in a limiter so driven / dense / bit-crushed places
+  // can push hard without clipping, while clean places pass through untouched
+  const out = track(new Tone.Limiter(-1).toDestination());
+  const master = track(new Tone.Gain(0).connect(out));
   const filter = track(new Tone.Filter(1400, "lowpass").connect(master));
   const reverb = track(new Tone.Reverb({ decay: char.reverbDecay, wet: char.reverbWet }).connect(filter));
   const delay = track(new Tone.FeedbackDelay(char.delayTime, char.delayFb).connect(reverb));
   delay.wet.value = char.delayWet;
 
-  // colour effect (if any) sits in front of the delay; voices feed into it
+  // drone bus: voices → [colour fx] → [drive/distortion] → delay
+  const drive = char.drive > 0.05
+    ? track(new Tone.Distortion({ distortion: char.drive * 0.7, wet: 0.3 + char.drive * 0.5 }))
+    : null;
+  if (drive) drive.connect(delay);
+  const busTail = drive || delay;
   const color = makeFX(char, track);
-  if (color) color.connect(delay);
-  const voiceDest = color || delay;
+  if (color) color.connect(busTail);
+  const voiceDest = color || busTail;
+
+  const trigProb = () => Math.max(0.08, Math.min(0.98, 0.16 + char.activity * 0.5 + params.density * 0.3));
 
   det.voices.forEach((v) => {
     const play = makeVoice(char, v, voiceDest, track);
     const loop = new Tone.Loop((time) => {
-      if (Math.random() > 0.32 + params.density * 0.68) return;
+      if (Math.random() > trigProb()) return;
       const deg = v.degrees[Math.floor(Math.random() * v.degrees.length)];
       let midi = char.root + char.scale.ints[deg] + 12 * v.octave + chord.offset;
-      midi = Math.max(26, Math.min(96, midi));
+      midi = Math.max(24, Math.min(100, midi));
       play(Tone.Frequency(midi, "midi"), v.interval * char.palette.len, time);
     }, v.interval);
     loop.start(Math.random() * 3);
     loops.push(loop);
   });
+
+  /* melodic arpeggio — gives ~a third of places a hummable motif */
+  if (char.arp) {
+    const degs = [];
+    for (let i = 0; i < char.arpLen; i++) degs.push(Math.floor(Math.random() * char.scale.ints.length));
+    if (char.arpUp !== false) degs.sort((a, b) => a - b);
+    const arpSynth = track(new Tone.Synth({
+      oscillator: { type: char.arpWave },
+      envelope: { attack: 0.008, decay: 0.28, sustain: 0.18, release: 0.7 },
+      volume: -17,
+    }).connect(voiceDest));
+    let ai = 0;
+    const seq = new Tone.Loop((time) => {
+      if (Math.random() > 0.55 + params.density * 0.4) { ai++; return; }
+      const d = degs[ai % degs.length];
+      let midi = char.root + char.scale.ints[d] + 12 * char.arpOct + chord.offset;
+      midi = Math.max(30, Math.min(100, midi));
+      arpSynth.triggerAttackRelease(Tone.Frequency(midi, "midi"), char.arpRate, time);
+      ai++;
+    }, char.arpRate);
+    seq.start(0);
+    loops.push(seq);
+  }
+
+  /* bass — weight for places that want it; sustained pad or pulsing root */
+  if (char.bass) {
+    const bassSynth = track(new Tone.MonoSynth({
+      oscillator: { type: char.bassWave },
+      filter: { Q: 1, type: "lowpass", rolloff: -24 },
+      filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 1.2, baseFrequency: 80, octaves: 2.5 },
+      envelope: char.bassPulse
+        ? { attack: 0.006, decay: 0.35, sustain: 0.2, release: 0.3 }
+        : { attack: 0.8, decay: 0.5, sustain: 0.85, release: 6 },
+      volume: -8,
+    }).connect(filter));
+    const bassMidi = () => Math.max(22, char.root - 12 + chord.offset);
+    if (char.bassPulse) {
+      const bl = new Tone.Loop((time) => {
+        bassSynth.triggerAttackRelease(Tone.Frequency(bassMidi(), "midi"), "8n", time);
+      }, "4n");
+      bl.start(0);
+      loops.push(bl);
+    } else {
+      const bl = new Tone.Loop((time) => {
+        bassSynth.triggerAttackRelease(Tone.Frequency(bassMidi(), "midi"), "1m", time);
+      }, "2m");
+      bl.start(0);
+      loops.push(bl);
+    }
+  }
 
   /* slow chord drift for "moving" places */
   if (char.moving) {
