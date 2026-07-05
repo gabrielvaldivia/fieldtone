@@ -277,7 +277,7 @@ function genScale(rng) {
    — the way familiar tunes follow the changes. Developed across a rising-then-
    resolving arc. Notes are absolute SCALE degrees; the render maps them to pitch.
    Returns { phrases, arcLen, phraseSteps }. */
-function genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng) {
+function genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng, rhythm8) {
   const L = scale.ints.length;
   const CS = chordSteps;
   const cyc = progression.length;
@@ -285,7 +285,7 @@ function genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng) 
   const arcLen = 4 + Math.floor(rng() * 4);            // 4–7 phrases
   const chordTones = seventh ? [0, 2, 4, 6] : [0, 2, 4];   // scale-step offsets forming the chord
   const contour = CONTOURS[Math.floor(rng() * CONTOURS.length)];
-  const rhy = RHYTHMS8[Math.floor(rng() * RHYTHMS8.length)];
+  const rhy = rhythm8 || RHYTHMS8[Math.floor(rng() * RHYTHMS8.length)];   // usually derived from the drums
   const startTone = Math.floor(rng() * chordTones.length); // which chord tone the motif opens on
 
   const phrases = [];
@@ -316,6 +316,10 @@ function genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng) 
   for (let i = last.length - 1; i >= 0; i--) { if (last[i].play) { last[i] = { play: true, deg: 0, dur: 2 }; break; } }
   return { phrases, arcLen, phraseSteps };
 }
+
+/* Bass rhythm derived from the kick: where the kick lands, the bass lands.
+   (16th-grid kick folded onto the 8th-note grid the bass plays on.) */
+const bassFromKick = (K) => { const b = Array(8).fill(0); for (let i = 0; i < 8; i++) b[i] = (K[i * 2] || K[i * 2 + 1]) ? 1 : 0; b[0] = 1; return b; };
 
 /* A 16-step kit pattern (kick / snare / hat), with per-place variation. */
 function genDrums(kit, rng) {
@@ -594,7 +598,40 @@ function makeCharacter(lat, lng) {
   const leadOct = 1 + Math.floor(rng() * 2);                 // melody register above the root
   const padOct = 0;
   const melodyRest = 0.55 + rng() * 0.32;                    // (unused by the new motif melody; kept for evolve)
-  const melodyArc = genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng);
+
+  // ---- the band plays as ONE, built bottom-up from the drums ----
+  // 1) BASS locks to the kick: it lands where the kick lands (or a gentle
+  //    pulse when the place has no drums)
+  const bass8 = (beat > 0 && kit !== "none")
+    ? bassFromKick(drums.K)
+    : (() => { const e = euclid(2 + Math.floor(rng() * 3), 8, 0); e[0] = 1; return e; })();
+  // 2) CHORDS comp WITH the drums: groove places stab in the kick's pockets
+  //    (offbeats without a kick); ambient places keep the sustained pad
+  const compStabs = beat > 0.7 && rng() < 0.55;
+  const comp8 = Array(8).fill(0);
+  for (let i = 0; i < 8; i++) {
+    const s = i * 2;
+    if (i % 2 === 1 && !(drums.K[s] || drums.K[s + 1])) comp8[i] = rng() < 0.7 ? 1 : 0;
+  }
+  if (comp8.reduce((a, b) => a + b, 0) === 0) {          // fallback: first kick-free offbeat
+    let placed = false;
+    for (const j of [3, 5, 7, 1]) { if (!(drums.K[j * 2] || drums.K[j * 2 + 1])) { comp8[j] = 1; placed = true; break; } }
+    if (!placed) comp8[3] = 1;
+  }
+  // 3) MELODY answers the drums: lands the downbeat, answers the snare a beat
+  //    later, and sits in pockets where the kick is quiet
+  const melR8 = Array(8).fill(0); melR8[0] = 1;
+  for (let i = 1; i < 8; i++) {
+    const s = i * 2;
+    const afterSnare = drums.S[(s + 14) % 16] === 1;           // snare on the previous 8th
+    const kickHere = drums.K[s] === 1 || drums.K[s + 1] === 1;
+    if (afterSnare && rng() < 0.75) melR8[i] = 1;
+    else if (!kickHere && rng() < 0.35) melR8[i] = 1;
+  }
+  if (melR8.reduce((a, b) => a + b, 0) < 3) { melR8[4] = 1; }
+  if (melR8.reduce((a, b) => a + b, 0) < 3) { melR8[6] = 1; }
+  // 4) the melody arc is built ON that drum-aware rhythm + the famous progression
+  const melodyArc = genMelodyArc(scale, seventh, chordSteps, progression, melodyRest, rng, melR8);
 
   // lead sits INSIDE the atmosphere — mostly wet, its own delay + reverb send,
   // amounts unique to the place (and modulated by time of day at play)
@@ -622,6 +659,7 @@ function makeCharacter(lat, lng) {
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
     seventh, progression, chordSteps, leadOct, padOct, melodyArc, melodyRest,
+    bass8, comp8, compStabs, melR8,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     bassHits, bassStyle, bassVerb,
     kit, drums, kickNote, air, airHz, swing };
@@ -805,6 +843,7 @@ function buildEngine(char, det) {
   let drumSwap = null;           // swaps the drum SOUND in place, without touching the groove
   // live, mutable arrangement — evolve() swaps these so the piece moves over time
   let songArc = char.melodyArc, songProg = char.progression, songDrums = char.drums;
+  let songBass = char.bass8;     // bass rhythm, locked to the kick; follows drum evolution
 
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
   // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
@@ -884,16 +923,17 @@ function buildEngine(char, det) {
 
     const CS = char.chordSteps;
     const SL = char.scale.ints.length;
-    let m = 0, hold = 0, arcSeed = 0;
+    let m = 0, hold = 0, arcSeed = 0, padFreqs = null;
     const song = new Tone.Loop((time) => {
       const PS = songArc.phraseSteps;
       const posInPhrase = m % PS;
       const posInChord = posInPhrase % CS;
       const globalPhrase = Math.floor(m / PS);
       // when the whole arc has played out, generate the next chapter of the story
+      // (same drum-derived rhythm, so the new tune still fits the groove)
       if (posInPhrase === 0 && globalPhrase > 0 && globalPhrase % songArc.arcLen === 0) {
         arcSeed++;
-        songArc = genMelodyArc(char.scale, char.seventh, CS, songProg, char.melodyRest, mulberry32(hashStr(char.key + "|arc" + arcSeed)));
+        songArc = genMelodyArc(char.scale, char.seventh, CS, songProg, char.melodyRest, mulberry32(hashStr(char.key + "|arc" + arcSeed)), char.melR8);
       }
       const pIdx = globalPhrase % songArc.arcLen;
       if (posInChord === 0) {                  // new chord
@@ -901,14 +941,16 @@ function buildEngine(char, det) {
         const tones = triad(char.scale, di, char.seventh);
         chord.offset = tones[0];               // drones + bass follow the changes
         harmony.tones = tones;
-        if (pad) {
-          const freqs = tones.map((t) => {
-            let pm = char.root + t + 12 * char.padOct;
-            while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
-            return Tone.Frequency(pm, "midi").toFrequency();
-          });
-          pad.triggerAttackRelease(freqs, eighth() * CS * 1.02, time);
-        }
+        padFreqs = tones.map((t) => {
+          let pm = char.root + t + 12 * char.padOct;
+          while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
+          return Tone.Frequency(pm, "midi").toFrequency();
+        });
+        if (pad && !char.compStabs) pad.triggerAttackRelease(padFreqs, eighth() * CS * 1.02, time);
+      }
+      // chords comp WITH the band: short stabs in the kick's pockets
+      if (pad && char.compStabs && padFreqs && char.comp8[posInChord % 8]) {
+        pad.triggerAttackRelease(padFreqs, eighth() * 0.9, time, 0.5);
       }
       const cs = songArc.phrases[pIdx][posInPhrase];
       if (hold > 0) { hold--; m++; return; }   // let long notes ring
@@ -940,12 +982,11 @@ function buildEngine(char, det) {
       envelope: { attack: 0.02, decay: 0.4, sustain: 0.55, release: 1.4 },
       volume: -13,
     }).connect(bassGain));
-    const pat = euclid(char.bassHits, 8, 0);
     const foldBass = (semi) => { let b = char.root - 12 + semi; while (b < 24) b += 12; while (b > 46) b -= 12; return b; };
     let bi = 0;
     const bl = new Tone.Loop((time) => {
       const onBeat = bi % 8 === 0;
-      if (!onBeat && !pat[bi % 8]) { bi++; return; }
+      if (!onBeat && !songBass[bi % 8]) { bi++; return; }   // the bass lands WITH the kick
       const t = harmony.tones;
       let semi = t[0];                                   // default: the chord root
       if (!onBeat) {
@@ -954,7 +995,8 @@ function buildEngine(char, det) {
         else if (char.bassStyle === "walk") semi = t[(bi >> 1) % t.length];
       }
       const dur = onBeat ? "4n" : "8n";
-      bassSynth.triggerAttackRelease(Tone.Frequency(foldBass(semi), "midi"), dur, time, onBeat ? 0.9 : 0.6);
+      const withKick = songDrums.K[(bi % 8) * 2] === 1;    // accent hits that share a kick
+      bassSynth.triggerAttackRelease(Tone.Frequency(foldBass(semi), "midi"), dur, time, onBeat || withKick ? 0.9 : 0.6);
       bi++;
     }, "8n");
     bl.start(0);
@@ -1115,6 +1157,7 @@ function buildEngine(char, det) {
         const d = genDrums(char.kit, rng);
         if (rng() < 0.4) { d.S[15] = 1; if (rng() < 0.5) d.H[15] = 1; }
         songDrums = d;
+        songBass = bassFromKick(d.K);          // the bass follows the kick wherever it goes
       }
       det.voices.forEach((v) => {                                               // shift the drone wash
         v.degrees = v.degrees.map(() => Math.floor(rng() * char.scale.ints.length));
