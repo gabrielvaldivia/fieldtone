@@ -716,7 +716,7 @@ function makeCharacter(lat, lng) {
   const leadVerbAmt = (0.85 + rng() * 0.6) * (1 - form.dry * 0.3);   // melody sits deep in reverb
   const leadDelayTime = 0.16 + rng() * 0.5;
   const leadDelayFb = 0.12 + rng() * 0.22;                          // shorter echo tail
-  const leadDelayWet = (0.04 + rng() * 0.12) * (1 - form.dry * 0.5); // much quieter delay — a whisper
+  const leadDelayWet = (rng() * 0.06) * (1 - form.dry * 0.5);       // barely-there echo, often none
   const leadDry = (0.07 + rng() * 0.1) * (1 + form.dry * 2.2);      // dry forms sit right up front
 
   const air = (0.03 + rng() * 0.09) * form.airMul;           // textural places push the wind bed forward
