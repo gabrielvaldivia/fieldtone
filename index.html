@@ -323,22 +323,22 @@ function genDrums(kit, rng) {
 const LEAD_KINDS = [
   { id: "pluck",  vol: -15, attackOnly: true, build: () => new Tone.PluckSynth({ attackNoise: 1, dampening: 2600, resonance: 0.9 }) },
   { id: "koto",   vol: -15, attackOnly: true, build: () => new Tone.PluckSynth({ attackNoise: 0.6, dampening: 1600, resonance: 0.94 }) },
-  { id: "bell",   vol: -18, build: () => new Tone.FMSynth({ harmonicity: 3.01, modulationIndex: 8, envelope: { attack: 0.004, decay: 1.4, sustain: 0, release: 1.6 }, modulationEnvelope: { attack: 0.004, decay: 0.4, sustain: 0, release: 0.6 } }) },
+  { id: "bell",   vol: -18, bright: true, build: () => new Tone.FMSynth({ harmonicity: 3.01, modulationIndex: 8, envelope: { attack: 0.004, decay: 1.4, sustain: 0, release: 1.6 }, modulationEnvelope: { attack: 0.004, decay: 0.4, sustain: 0, release: 0.6 } }) },
   { id: "rhodes", vol: -15, build: () => new Tone.FMSynth({ harmonicity: 1, modulationIndex: 3.5, envelope: { attack: 0.004, decay: 0.9, sustain: 0.15, release: 1 }, modulationEnvelope: { attack: 0.004, decay: 0.7, sustain: 0.1, release: 0.7 } }) },
   { id: "synth",  vol: -20, build: () => new Tone.MonoSynth({ oscillator: { type: "sawtooth" }, filter: { Q: 2, type: "lowpass", rolloff: -24 }, filterEnvelope: { attack: 0.02, decay: 0.3, sustain: 0.35, release: 0.8, baseFrequency: 350, octaves: 3 }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 0.7 } }) },
   { id: "square", vol: -22, build: () => new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.3, sustain: 0.3, release: 0.5 } }) },
   { id: "soft",   vol: -17, build: () => new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.04, decay: 0.4, sustain: 0.4, release: 1.3 } }) },
-  { id: "glass",  vol: -19, build: () => new Tone.Synth({ oscillator: { type: "fmsine" }, envelope: { attack: 0.02, decay: 0.5, sustain: 0.3, release: 1.4 } }) },
-  { id: "chime",  vol: -25, attackOnly: true, build: () => new Tone.MetalSynth({ harmonicity: 3.4, modulationIndex: 16, resonance: 1400, octaves: 1, envelope: { attack: 0.002, decay: 0.7, release: 0.6 } }) },
+  { id: "glass",  vol: -19, bright: true, build: () => new Tone.Synth({ oscillator: { type: "fmsine" }, envelope: { attack: 0.02, decay: 0.5, sustain: 0.3, release: 1.4 } }) },
+  { id: "chime",  vol: -25, attackOnly: true, bright: true, build: () => new Tone.MetalSynth({ harmonicity: 3.4, modulationIndex: 16, resonance: 1400, octaves: 1, envelope: { attack: 0.002, decay: 0.7, release: 0.6 } }) },
   { id: "pwm",    vol: -21, build: () => new Tone.Synth({ oscillator: { type: "pwm", modulationFrequency: 0.5 }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.35, release: 0.7 } }) },
   { id: "reed",   vol: -19, build: () => new Tone.AMSynth({ harmonicity: 2, envelope: { attack: 0.03, decay: 0.4, sustain: 0.4, release: 0.9 } }) },
   { id: "duo",    vol: -22, build: () => new Tone.DuoSynth({ harmonicity: 1.5, vibratoAmount: 0.08, vibratoRate: 4, voice0: { oscillator: { type: "triangle" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } }, voice1: { oscillator: { type: "sine" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } } }) },
   { id: "harp",   vol: -13, attackOnly: true, build: () => new Tone.PluckSynth({ attackNoise: 0.5, dampening: 4200, resonance: 0.96 }) },   // bright, clean (Tycho)
   { id: "marimba",vol: -14, build: () => new Tone.FMSynth({ harmonicity: 1, modulationIndex: 6, envelope: { attack: 0.002, decay: 0.6, sustain: 0, release: 0.5 }, modulationEnvelope: { attack: 0.002, decay: 0.2, sustain: 0, release: 0.3 } }) },
-  { id: "celesta",vol: -19, build: () => new Tone.FMSynth({ harmonicity: 5.02, modulationIndex: 6, envelope: { attack: 0.002, decay: 1.1, sustain: 0, release: 1.1 }, modulationEnvelope: { attack: 0.002, decay: 0.3, sustain: 0, release: 0.4 } }) },
+  { id: "celesta",vol: -19, bright: true, build: () => new Tone.FMSynth({ harmonicity: 5.02, modulationIndex: 6, envelope: { attack: 0.002, decay: 1.1, sustain: 0, release: 1.1 }, modulationEnvelope: { attack: 0.002, decay: 0.3, sustain: 0, release: 0.4 } }) },
   { id: "organ",  vol: -20, build: () => new Tone.Synth({ oscillator: { type: "sine4" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.75, release: 1.2 } }) },
   { id: "choir",  vol: -18, build: () => new Tone.Synth({ oscillator: { type: "fatsine", count: 4, spread: 34 }, envelope: { attack: 0.8, decay: 1.5, sustain: 0.6, release: 3 } }) },
-  { id: "crystal",vol: -21, build: () => new Tone.Synth({ oscillator: { type: "fmsine", modulationIndex: 2 }, envelope: { attack: 0.005, decay: 0.7, sustain: 0.1, release: 1.6 } }) },   // sparkly high
+  { id: "crystal",vol: -21, bright: true, build: () => new Tone.Synth({ oscillator: { type: "fmsine", modulationIndex: 2 }, envelope: { attack: 0.005, decay: 0.7, sustain: 0.1, release: 1.6 } }) },   // sparkly high
   { id: "saw",    vol: -23, build: () => new Tone.MonoSynth({ oscillator: { type: "fatsawtooth", count: 2, spread: 18 }, filter: { Q: 3, type: "lowpass", rolloff: -24 }, filterEnvelope: { attack: 0.03, decay: 0.4, sustain: 0.3, release: 0.9, baseFrequency: 300, octaves: 3.5 }, envelope: { attack: 0.02, decay: 0.35, sustain: 0.4, release: 0.9 } }) },
   { id: "vox",    vol: -19, build: () => new Tone.AMSynth({ harmonicity: 3, envelope: { attack: 0.2, decay: 0.6, sustain: 0.5, release: 1.6 } }) },
   { id: "sub",    vol: -16, build: () => new Tone.Synth({ oscillator: { type: "sine" }, envelope: { attack: 0.06, decay: 0.5, sustain: 0.6, release: 2 } }) },   // rounded low
@@ -1113,8 +1113,18 @@ function buildEngine(char, det) {
     // build each melodic voice: an instrument + a behaviour, into the wet bus
     char.melo.forEach((mv, vi) => {
       const pan = track(new Tone.Panner(mv.pan).connect(leadGain));
-      const vgain = track(new Tone.Gain(mv.level).connect(pan));
       const K = LEAD_KIND_BY_ID[mv.kindId] || LEAD_KINDS[0];
+      // bright/bell instruments poke out of an ambient bed — darken their pointy
+      // attack and drench them in extra reverb + echo so they melt into the wash
+      let head = pan;
+      if (K.bright) head = track(new Tone.Filter(1500, "lowpass").connect(pan));
+      const vgain = track(new Tone.Gain(mv.level * (K.bright ? 0.85 : 1)).connect(head));
+      if (K.bright) {
+        vgain.connect(track(new Tone.Gain(0.9).connect(reverb)));                    // extra reverb send
+        const echo = track(new Tone.FeedbackDelay(char.leadDelayTime, 0.42));        // extra echo → reverb
+        echo.wet.value = 0.5; echo.connect(reverb);
+        vgain.connect(echo);
+      }
       const play = makeLeadKind(K, vgain, track);
       const ctl = { behavior: mv.behavior, kindId: mv.kindId, level: mv.level, gain: vgain };
       meloCtl.push(ctl);
