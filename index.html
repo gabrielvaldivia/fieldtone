@@ -342,6 +342,15 @@ const LEAD_KINDS = [
   { id: "pwm",    vol: -21, build: () => new Tone.Synth({ oscillator: { type: "pwm", modulationFrequency: 0.5 }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.35, release: 0.7 } }) },
   { id: "reed",   vol: -19, build: () => new Tone.AMSynth({ harmonicity: 2, envelope: { attack: 0.03, decay: 0.4, sustain: 0.4, release: 0.9 } }) },
   { id: "duo",    vol: -22, build: () => new Tone.DuoSynth({ harmonicity: 1.5, vibratoAmount: 0.08, vibratoRate: 4, voice0: { oscillator: { type: "triangle" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } }, voice1: { oscillator: { type: "sine" }, envelope: { attack: 0.03, decay: 0.3, sustain: 0.4, release: 1 } } }) },
+  { id: "harp",   vol: -13, attackOnly: true, build: () => new Tone.PluckSynth({ attackNoise: 0.5, dampening: 4200, resonance: 0.96 }) },   // bright, clean (Tycho)
+  { id: "marimba",vol: -14, build: () => new Tone.FMSynth({ harmonicity: 1, modulationIndex: 6, envelope: { attack: 0.002, decay: 0.6, sustain: 0, release: 0.5 }, modulationEnvelope: { attack: 0.002, decay: 0.2, sustain: 0, release: 0.3 } }) },
+  { id: "celesta",vol: -19, build: () => new Tone.FMSynth({ harmonicity: 5.02, modulationIndex: 6, envelope: { attack: 0.002, decay: 1.1, sustain: 0, release: 1.1 }, modulationEnvelope: { attack: 0.002, decay: 0.3, sustain: 0, release: 0.4 } }) },
+  { id: "organ",  vol: -20, build: () => new Tone.Synth({ oscillator: { type: "sine4" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.75, release: 1.2 } }) },
+  { id: "choir",  vol: -18, build: () => new Tone.Synth({ oscillator: { type: "fatsine", count: 4, spread: 34 }, envelope: { attack: 0.8, decay: 1.5, sustain: 0.6, release: 3 } }) },
+  { id: "crystal",vol: -21, build: () => new Tone.Synth({ oscillator: { type: "fmsine", modulationIndex: 2 }, envelope: { attack: 0.005, decay: 0.7, sustain: 0.1, release: 1.6 } }) },   // sparkly high
+  { id: "saw",    vol: -23, build: () => new Tone.MonoSynth({ oscillator: { type: "fatsawtooth", count: 2, spread: 18 }, filter: { Q: 3, type: "lowpass", rolloff: -24 }, filterEnvelope: { attack: 0.03, decay: 0.4, sustain: 0.3, release: 0.9, baseFrequency: 300, octaves: 3.5 }, envelope: { attack: 0.02, decay: 0.35, sustain: 0.4, release: 0.9 } }) },
+  { id: "vox",    vol: -19, build: () => new Tone.AMSynth({ harmonicity: 3, envelope: { attack: 0.2, decay: 0.6, sustain: 0.5, release: 1.6 } }) },
+  { id: "sub",    vol: -16, build: () => new Tone.Synth({ oscillator: { type: "sine" }, envelope: { attack: 0.06, decay: 0.5, sustain: 0.6, release: 2 } }) },   // rounded low
 ];
 
 /* ================================================================== */
@@ -507,6 +516,50 @@ function genFragment(rng, i) {
   return { interval: (7 + rng() * 14) * (1 + i * 0.31), figure, level: 0.7 + rng() * 0.3 };
 }
 
+/* Genre families → which melodic BEHAVIOURS and extra instruments fit.
+   Loosely themed: the pools bias a place without pinning it. */
+const AMBIENTG = new Set(["ambient", "nordic", "drone", "gamelan", "indian", "classical", "eastasian"]);
+const PLUCKYG  = new Set(["bluegrass", "celtic", "country", "flamenco", "mediterranean", "latin", "bossa", "andean", "afrobeat", "desertblues", "salsa", "tango"]);
+const ELECTROG = new Set(["cyberpunk", "techno", "house", "kpop", "dnb", "trap", "gfunk", "balkan", "footwork"]);
+function behaviorPool(genre) {
+  if (AMBIENTG.has(genre)) return ["sustained", "fragments", "sustained", "scatter", "fragments"];
+  if (ELECTROG.has(genre)) return ["arp", "arp", "fragments", "arp", "sustained"];
+  if (PLUCKYG.has(genre))  return ["arp", "fragments", "fragments", "arp", "sustained"];
+  return ["fragments", "arp", "sustained", "scatter", "fragments"];
+}
+function leadPool(genre, G) {
+  const extra = AMBIENTG.has(genre) ? ["choir", "organ", "crystal", "vox", "glass"]
+    : ELECTROG.has(genre) ? ["crystal", "saw", "marimba", "pwm"]
+    : PLUCKYG.has(genre) ? ["harp", "marimba", "organ", "koto"]
+    : ["harp", "marimba", "rhodes", "vox"];
+  return G.leads.concat(extra);
+}
+
+/* One melodic voice: an instrument + a behaviour + its own params. */
+function makeMeloVoice(kindId, behavior, oct, level, rng) {
+  const v = { kindId, behavior, oct, level, pan: (rng() * 2 - 1) * 0.5 };
+  if (behavior === "arp") {
+    v.rate = ["16n", "8n", "8t", "16n", "8n", "4n"][Math.floor(rng() * 6)];   // gentle pulse
+    v.dir = ["up", "down", "updown", "random"][Math.floor(rng() * 4)];
+    v.span = 1 + Math.floor(rng() * 2);                    // 1–2 octave reach
+    v.gate = 0.4 + rng() * 0.5;                             // note length vs step
+    v.prob = 0.82 + rng() * 0.18;                           // the odd rest
+  } else if (behavior === "sustained") {
+    v.interval = 5 + rng() * 10;                            // seconds per note
+    v.noteLen = v.interval * (0.8 + rng() * 0.3);
+  } else if (behavior === "scatter") {
+    v.interval = 1.3 + rng() * 2.6;
+    v.prob = 0.2 + rng() * 0.3;
+    v.noteLen = 1.8 + rng() * 3;
+    v.wide = rng() < 0.5;                                   // sometimes leaps octaves
+  } else {                                                 // fragments
+    const n = 2 + Math.floor(rng() * 3);
+    v.fragments = [];
+    for (let i = 0; i < n; i++) v.fragments.push(genFragment(rng, i));
+  }
+  return v;
+}
+
 const CELL = 0.001;
 const cellOf = (lat, lng) => ({ lat: Math.round(lat / CELL) * CELL, lng: Math.round(lng / CELL) * CELL });
 
@@ -537,8 +590,22 @@ function makeCharacter(lat, lng) {
   const hasDrone = rng() < Math.max(0.35, G.droneChance);
   const hasPad = hasDrone ? (rng() < 0.75) : true;
   const droneLevel = hasDrone ? Math.max(0.5, G.drone) : 0;
-  const leadId = pick(G.leads);
-  const leadKind = LEAD_KINDS.find((k) => k.id === leadId) || LEAD_KINDS[0];   // genre-appropriate instrument
+  // ---- melodic voices: instrument(s) + behaviour, per location ----
+  const pool = leadPool(genre, G);
+  const rpick = (arr) => arr[Math.floor(rng() * arr.length)];    // instrument/behaviour are part of the place's character
+  const primaryId = rpick(pool);
+  const behavior = rpick(behaviorPool(genre));
+  const leadKind = LEAD_KINDS.find((k) => k.id === primaryId) || LEAD_KINDS[0];   // kept for compat
+  const leadOctBase = [0, 1, 1, 2, 2, 3][Math.floor(rng() * 6)];   // wide register per place
+  const layers = 1 + Math.floor(srng() * srng() * 3);           // 1–3, mostly 1 (this visit's fullness)
+  const melo = [makeMeloVoice(primaryId, behavior, leadOctBase, 1, srng)];
+  const ACCOMP = ["sustained", "scatter", "fragments"];         // companions stay out of the way
+  for (let i = 1; i < layers; i++) {
+    const id2 = spick(pool);
+    const beh2 = spick(ACCOMP);
+    const oct2 = Math.max(-1, Math.min(3, leadOctBase + [-1, 0, 1][Math.floor(srng() * 3)]));
+    melo.push(makeMeloVoice(id2, beh2, oct2, 0.55 + srng() * 0.25, srng));
+  }
 
   // the "space" — the genre sets the room, from intimate to cathedral
   const reverbDecay = rangePick(rng, G.verb);
@@ -589,18 +656,10 @@ function makeCharacter(lat, lng) {
   const progKeys = GENRE_PROGS[genre] || ["pop1"];
   const progression = PROGS[spick(progKeys)].map((d) => ((d % L) + L) % L);   // mapped into this scale
   const chordDwell = 30 + srng() * 30;                       // one chord every 30–60 s
-  const leadOct = 1 + Math.floor(rng() * 2);                 // fragment register above the root
   const padOct = 0;
 
-  // ---- phasing fragments, Music for Airports style: a few short chord-tone
-  // figures, each on its own loop of a different length, drifting in and out
-  // of alignment. Melodic, but never a tune. ----
-  const fragN = 2 + Math.floor(srng() * 3);                  // 2–4 fragments
-  const fragments = [];
-  for (let i = 0; i < fragN; i++) fragments.push(genFragment(srng, i));
-
-  // fragments sit INSIDE the atmosphere — mostly wet, their own delay + reverb
-  // send, amounts unique to the place (and modulated by time of day at play)
+  // melodic voices sit INSIDE the atmosphere — mostly wet, their own delay +
+  // reverb send, amounts unique to the place (and modulated by time of day)
   const leadVerbAmt = 0.4 + rng() * 0.55;
   const leadDelayTime = 0.16 + rng() * 0.5;
   const leadDelayFb = 0.2 + rng() * 0.45;
@@ -616,7 +675,7 @@ function makeCharacter(lat, lng) {
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
-    seventh, progression, chordDwell, leadOct, padOct, fragments,
+    seventh, progression, chordDwell, leadOctBase, padOct, melo, behavior,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     kit, air, airHz };
 }
@@ -778,13 +837,14 @@ function makeFX(char, track) {
   }
 }
 
-/* Build the lead (melody) instrument for this place and return a play() fn. */
-function makeLead(char, dest, track) {
-  const K = char.leadKind || LEAD_KINDS[0];
+/* Build a melodic instrument by kind and return a play(freq, dur, time, vel) fn. */
+function makeLeadKind(K, dest, track) {
+  K = K || LEAD_KINDS[0];
   const synth = track(K.build().connect(dest));
   try { synth.volume.value = K.vol; } catch (e) {}
-  return (freq, dur, time) => K.attackOnly ? synth.triggerAttack(freq, time) : synth.triggerAttackRelease(freq, dur, time);
+  return (freq, dur, time, vel) => K.attackOnly ? synth.triggerAttack(freq, time, vel) : synth.triggerAttackRelease(freq, dur, time, vel);
 }
+function makeLead(char, dest, track) { return makeLeadKind(char.leadKind, dest, track); }
 
 function buildEngine(char, det) {
   const nodes = [];
@@ -797,7 +857,7 @@ function buildEngine(char, det) {
   let leadGainNode = null, padGainNode = null, leadDelayNode = null;
   // live, mutable arrangement — evolve() reshapes these so the piece moves over time
   let songProg = char.progression;
-  const songFrags = char.fragments.map((f) => ({ interval: f.interval, figure: f.figure.slice(), level: f.level }));
+  const meloCtl = [];            // per-voice live controls, populated below; evolve() reshapes them
   let rootNow = char.root;       // the current key — evolve() can modulate it like a bridge
 
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
@@ -893,36 +953,93 @@ function buildEngine(char, det) {
     leadGainNode = leadGain;
     leadGain.connect(leadDelay); leadGain.connect(leadVerb); leadGain.connect(leadDry);
 
-    // halo — a soft shadow voice that doubles every fragment note an octave
-    // below (and sometimes whispers the note itself), swelling in just after
-    // the attack. Shares the fragments' wet routing, so each figure blooms
-    // out of the atmosphere like a layered synth patch, not a lone wave.
+    // halo — a soft shadow voice that doubles slow notes an octave below so
+    // each figure blooms out of the atmosphere like a layered patch, not a wave
     const halo = track(new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "fatsine", count: 3, spread: 22 },
       envelope: { attack: 1.4, decay: 2.5, sustain: 0.45, release: 7 },
       volume: -25,
     }).connect(leadGain));
 
-    // wind stirs the fragments awake; night thins them out
-    const fragProb = () => Math.max(0.25, Math.min(0.95, 0.45 + params.density * 0.25 + params.wind * 0.25));
-    songFrags.forEach((f) => {
-      const play = makeLead(char, leadGain, track);   // each fragment gets its own voice
-      const loop = new Tone.Loop((time) => {
-        if (Math.random() > fragProb()) return;       // some passes stay silent — space is the point
-        f.figure.forEach((note) => {
-          const tones = harmony.tones;
-          const t = tones[note.tone % tones.length] + 12 * note.oct;
-          let midi = rootNow + t + 12 * char.leadOct;
-          while (midi > 84) midi -= 12; while (midi < 52) midi += 12;
-          const when = time + note.at;
-          play(Tone.Frequency(midi, "midi"), note.len, when);
-          const low = midi >= 60 ? midi - 12 : midi;   // octave shadow underneath
-          halo.triggerAttackRelease(Tone.Frequency(low, "midi"), note.len * 1.5, when + 0.06, 0.85);
-          if (Math.random() < 0.5) halo.triggerAttackRelease(Tone.Frequency(midi, "midi"), note.len * 1.2, when + 0.15, 0.35);
+    // maps a chord-tone index (over a span of octaves) to a folded midi note
+    const toMidi = (pos, oct, lo, hi) => {
+      const tones = harmony.tones, n = tones.length;
+      const o = Math.floor(pos / n);
+      let midi = rootNow + tones[((pos % n) + n) % n] + 12 * (o + oct);
+      while (midi > hi) midi -= 12; while (midi < lo) midi += 12;
+      return midi;
+    };
+    // wind + daylight stir the voices awake; night and stillness thin them out
+    const liven = () => 0.4 + params.density * 0.25 + params.wind * 0.25;
+
+    // build each melodic voice: an instrument + a behaviour, into the wet bus
+    char.melo.forEach((mv, vi) => {
+      const pan = track(new Tone.Panner(mv.pan).connect(leadGain));
+      const vgain = track(new Tone.Gain(mv.level).connect(pan));
+      const K = LEAD_KIND_BY_ID[mv.kindId] || LEAD_KINDS[0];
+      const play = makeLeadKind(K, vgain, track);
+      const ctl = { behavior: mv.behavior, kindId: mv.kindId, level: mv.level, gain: vgain };
+      meloCtl.push(ctl);
+
+      if (mv.behavior === "arp") {                    // a moving sequence with a gentle pulse
+        const spanN = mv.span;
+        let step = 0;
+        const loop = new Tone.Loop((time) => {
+          if (Math.random() > mv.prob * liven()) { step++; return; }
+          const seqLen = harmony.tones.length * spanN;
+          let pos;
+          if (mv.dir === "up") pos = step % seqLen;
+          else if (mv.dir === "down") pos = seqLen - 1 - (step % seqLen);
+          else if (mv.dir === "updown") { const p = step % (2 * seqLen - 2 || 1); pos = p < seqLen ? p : 2 * seqLen - 2 - p; }
+          else pos = Math.floor(Math.random() * seqLen);
+          const midi = toMidi(pos, mv.oct, 50, 92);
+          const dur = Tone.Time(mv.rate).toSeconds() * mv.gate;
+          play(Tone.Frequency(midi, "midi"), dur, time, 0.5 + Math.random() * 0.3);
+          step++;
+        }, mv.rate);
+        loop.start(0.1);
+        loops.push(loop);
+        ctl.loop = loop;
+      } else if (mv.behavior === "sustained") {       // one long legato tone at a time, wandering
+        let deg = 0;
+        const loop = new Tone.Loop((time) => {
+          if (Math.random() > 0.5 + liven() * 0.4) return;
+          deg += [-2, -1, 0, 1, 2][Math.floor(Math.random() * 5)];
+          const midi = toMidi(((deg % 3) + 3) % 3, mv.oct, 48, 82);
+          play(Tone.Frequency(midi, "midi"), mv.noteLen, time, 0.7);
+          halo.triggerAttackRelease(Tone.Frequency(Math.max(40, midi - 12), "midi"), mv.noteLen * 1.2, time + 0.08, 0.5);
+        }, mv.interval);
+        loop.start(Math.random() * mv.interval);
+        loops.push(loop);
+        ctl.loop = loop;
+      } else if (mv.behavior === "scatter") {         // sparse random single notes
+        const loop = new Tone.Loop((time) => {
+          if (Math.random() > mv.prob * liven()) return;
+          const span = mv.wide ? 3 : 2;
+          const pos = Math.floor(Math.random() * harmony.tones.length * span);
+          const midi = toMidi(pos, mv.oct, 50, 90);
+          play(Tone.Frequency(midi, "midi"), mv.noteLen, time, 0.5 + Math.random() * 0.35);
+        }, mv.interval);
+        loop.start(Math.random() * mv.interval);
+        loops.push(loop);
+        ctl.loop = loop;
+      } else {                                        // fragments — phasing chord-tone figures
+        ctl.figs = mv.fragments.map((f) => f);
+        mv.fragments.forEach((f, fi) => {
+          const loop = new Tone.Loop((time) => {
+            if (Math.random() > 0.35 + liven() * 0.55) return;
+            const fig = ctl.figs[fi] ? ctl.figs[fi].figure : f.figure;
+            fig.forEach((note) => {
+              const midi = toMidi(note.tone + note.oct * harmony.tones.length, mv.oct, 52, 86);
+              const when = time + note.at;
+              play(Tone.Frequency(midi, "midi"), note.len, when, 0.6);
+              halo.triggerAttackRelease(Tone.Frequency(Math.max(40, midi - 12), "midi"), note.len * 1.4, when + 0.06, 0.55);
+            });
+          }, f.interval);
+          loop.start(0.5 + Math.random() * 4);
+          loops.push(loop);
         });
-      }, f.interval);
-      loop.start(0.5 + Math.random() * 4);
-      loops.push(loop);
+      }
     });
   }
 
@@ -1000,11 +1117,17 @@ function buildEngine(char, det) {
       const rng = mulberry32(hashStr(char.key + "|" + SESSION_SEED + "|evo" + evo));
       // every minute: a subtle move. The moves ACCUMULATE, so five minutes out
       // the soundscape is clearly elsewhere and ten minutes out it's a different land.
-      // one fragment dissolves and re-forms: a new figure on the same loop length
-      if (songFrags.length) {
-        const f = songFrags[Math.floor(rng() * songFrags.length)];
-        f.figure = genFragment(rng, 0).figure;
-      }
+      // a melodic voice shifts: a fragment re-forms, or a voice fades / swells
+      meloCtl.forEach((ctl) => {
+        if (ctl.behavior === "fragments" && ctl.figs) {
+          const i = Math.floor(rng() * ctl.figs.length);
+          ctl.figs[i] = genFragment(rng, i);        // one figure dissolves and re-forms
+        }
+        if (rng() < 0.3) {                          // a voice quietly rises or recedes
+          ctl.level = Math.max(0.3, Math.min(1.1, ctl.level * (0.85 + rng() * 0.35)));
+          ctl.gain.gain.rampTo(ctl.level, 6);
+        }
+      });
       // ~4 min: modulate the key a whole step, like weather fronts passing
       if (evo % 4 === 3 && rng() < 0.7) {
         const next = rootNow + (rng() < 0.5 ? 2 : -2);
