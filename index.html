@@ -31,8 +31,9 @@
   /* one style everywhere: mono, all caps, one size */
   .mono, #q, #locate, #results button { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
 
-  /* four corners — a HUD */
-  .corner { position: fixed; z-index: 5; max-width: 46vw; line-height: 1.7; }
+  /* four corners — a HUD. Hidden on the intro screen; fades in once you begin. */
+  .corner { position: fixed; z-index: 5; max-width: 46vw; line-height: 1.7; opacity: 0; pointer-events: none; transition: opacity 1.4s ease; }
+  body.begun .corner { opacity: 1; pointer-events: auto; }
   .tl { top: max(18px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left)); }
   .tr { top: max(18px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right)); text-align: right; }
   .bl { bottom: max(16px, env(safe-area-inset-bottom)); left: max(18px, env(safe-area-inset-left)); }
@@ -73,7 +74,8 @@
     color: var(--ink); opacity: 0.72; transition: opacity 1.4s ease;
   }
   #intro p { margin: 0 0 1.6em; }
-  #intro .cue { margin-top: 2em; color: var(--faint); }
+  #intro .cue { margin-top: 2.4em; text-align: center; color: var(--ink); animation: cuePulse 2.4s ease-in-out infinite; }
+  @keyframes cuePulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.95; } }
   #intro.gone { opacity: 0; }
 
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
@@ -1610,6 +1612,7 @@ async function ensureAudio() {
     state.playing = true;
     audioStarted = true;
     applyConditions();
+    document.body.classList.add("begun");                               // fade the corner HUD in
     const intro = $("intro"); if (intro) intro.classList.add("gone");   // dismiss the explanation for good
     // context running → reveal the field; still blocked (e.g. iOS ring/silent
     // switch) → say so instead of sitting there silent
