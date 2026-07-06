@@ -54,7 +54,8 @@
   #msg { margin-top: 6px; min-height: 12px; }
 
   /* the cymatics field — fills the screen, sits over the sky gradient, under the HUD */
-  #gl { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 0; display: block; pointer-events: none; }
+  #gl { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 0; display: block; pointer-events: none; opacity: 0; transition: opacity 2.2s ease; }
+  #gl.on { opacity: 1; }
   /* one-time invitation; fades away for good after the first touch */
   #hint {
     position: fixed; left: 50%; top: 50%;
@@ -1492,6 +1493,7 @@ async function ensureAudio() {
     state.playing = true;
     audioStarted = true;
     setHint(null);
+    { const g = $("gl"); if (g) g.classList.add("on"); }   // fade the cymatics in now
     applyConditions();
   } catch (err) {
     $("msg").textContent = "audio error: " + err.message;
@@ -1717,7 +1719,7 @@ function cyReadAudio() {
 }
 function cyFrame() {
   cyRAF = requestAnimationFrame(cyFrame);
-  if (document.hidden || !cyGL) return;
+  if (document.hidden || !cyGL || !audioStarted) return;   // stays blank (and idle) until you begin
   const L = 0.035;                                             // travel = a slow dissolve between plates
   for (const k of CY_KEYS) cyState[k] += (cyTarget[k] - cyState[k]) * L;
   cyReadAudio();
