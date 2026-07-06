@@ -704,12 +704,14 @@ function makeCharacter(lat, lng) {
   const bassPulse = rng() < 0.5;
   const bassWave = ["sine", "triangle", "sawtooth", "square"][Math.floor(rng() * 4)];
 
-  // ---- harmony: a FAMOUS chord progression, stretched to glacial pace ----
+  // ---- harmony: a FAMOUS chord progression the pad actually moves through ----
   // (all PERFORMANCE tier — a fresh performance on the same instruments every visit)
   const seventh = srng() < G.seventh;                        // jazzier genres use 7th chords
   const progKeys = GENRE_PROGS[genre] || ["pop1"];
   const progression = PROGS[spick(progKeys)].map((d) => ((d % L) + L) % L);   // mapped into this scale
-  const chordDwell = 30 + srng() * 30;                       // one chord every 30–60 s
+  // one chord every ~8–18 s so the progression is audible; static "hold" forms
+  // still move, just a good deal slower (a drone that drifts through the changes)
+  const chordDwell = (8 + srng() * 10) * (form.padMode === "hold" ? 2.3 : 1);
   const padOct = 0;
 
   // melodic voices sit INSIDE the atmosphere — mostly wet, their own delay +
@@ -978,8 +980,8 @@ function buildEngine(char, det) {
     }
     let ci = 0;
     const chordClock = new Tone.Loop((time) => {
-      // "hold" forms stay on one chord (a static swell); the rest walk the progression
-      const di = songProg[(char.padMode === "hold" ? 0 : ci) % songProg.length];
+      // every place walks its progression; "hold" forms just dwell longer per chord
+      const di = songProg[ci % songProg.length];
       const tones = triad(char.scale, di, char.seventh);
       chord.offset = tones[0];                 // drones + fragments follow the changes
       harmony.tones = tones;
