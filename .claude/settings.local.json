@@ -52,7 +52,11 @@
       "Bash(git add *)",
       "Bash(git commit -q -m ' *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://fieldtone.vercel.app)",
-      "Bash(node -e \"const fs=require\\('fs'\\);const h=fs.readFileSync\\('index.html','utf8'\\);const m=[...h.matchAll\\(/<script>\\([\\\\s\\\\S]*?\\)<\\\\/script>/g\\)];let ok=true;m.forEach\\(\\(x,i\\)=>{try{new Function\\(x[1]\\);}catch\\(e\\){ok=false;console.log\\('script',i,'ERROR',e.message\\);}}\\);console.log\\(ok?'inline scripts parse OK':'parse errors'\\);\")"
+      "Bash(node -e \"const fs=require\\('fs'\\);const h=fs.readFileSync\\('index.html','utf8'\\);const m=[...h.matchAll\\(/<script>\\([\\\\s\\\\S]*?\\)<\\\\/script>/g\\)];let ok=true;m.forEach\\(\\(x,i\\)=>{try{new Function\\(x[1]\\);}catch\\(e\\){ok=false;console.log\\('script',i,'ERROR',e.message\\);}}\\);console.log\\(ok?'inline scripts parse OK':'parse errors'\\);\")",
+      "mcp__visualize__read_me",
+      "Bash(python3 -c ' *)",
+      "mcp__visualize__show_widget",
+      "Bash(node -e \"const fs=require\\('fs'\\);const h=fs.readFileSync\\('index.html','utf8'\\);const m=[...h.matchAll\\(/<script>\\([\\\\s\\\\S]*?\\)<\\\\/script>/g\\)];let ok=true;m.forEach\\(\\(x,i\\)=>{try{new Function\\(x[1]\\);}catch\\(e\\){ok=false;console.log\\('ERR',e.message\\);}}\\);console.log\\(ok?'parse OK':'parse errors'\\);\")"
     ]
   }
 }

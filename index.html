@@ -38,12 +38,14 @@
   .bl { bottom: max(16px, env(safe-area-inset-bottom)); left: max(18px, env(safe-area-inset-left)); }
   .br { bottom: max(16px, env(safe-area-inset-bottom)); right: max(18px, env(safe-area-inset-right)); text-align: right; }
 
-  .searchbar { position: relative; display: flex; align-items: baseline; gap: 8px; }
+  .searchbar { position: relative; display: flex; align-items: center; gap: 8px; }
   #q { width: min(48vw, 260px); background: transparent; border: none; padding: 0; color: var(--ink); transition: opacity 1.2s; }
   #q:focus-visible { outline: none; }
   #q.fading { opacity: 0.3; }
   #q::placeholder { color: var(--ink); opacity: 0.35; }
-  #locate { background: transparent; border: none; padding: 0; cursor: pointer; color: var(--ink); }
+  /* current-location toggle: hollow ring when off, filled dot when on; sized to the text */
+  #locate { flex: 0 0 auto; width: 1.2em; height: 1.2em; padding: 0; cursor: pointer; background: transparent; border: 1.6px solid currentColor; border-radius: 50%; color: var(--ink); }
+  #locate.on { background-color: currentColor; }
   #results { position: absolute; top: 150%; left: 0; z-index: 6; min-width: 210px; background: var(--top); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; display: none; }
   #results.open { display: block; }
   #results button { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--ink); padding: 10px 12px; cursor: pointer; }
@@ -68,7 +70,7 @@
 <body>
   <div class="corner tl">
     <div class="searchbar">
-      <button id="locate" aria-label="Use my location">◎</button>
+      <button id="locate" aria-label="Use my location" aria-pressed="false"></button>
       <input id="q" class="mono" autocomplete="off" spellcheck="false" placeholder="search…" aria-label="Current location — type to search any place on Earth">
     </div>
     <div id="results" role="listbox"></div>
@@ -1446,11 +1448,17 @@ function fieldGesture(e) {
 window.addEventListener("pointerdown", fieldGesture);
 window.addEventListener("keydown", (e) => { if (!audioStarted) ensureAudio(); });
 
+/* the locate toggle fills in when the view IS your real location, and empties
+   to a ring when you've navigated somewhere else via search */
+function setGeoActive(on) {
+  const b = $("locate");
+  if (b) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); }
+}
 function locate(silent) {
   if (!navigator.geolocation) { if (!silent) $("msg").textContent = "geolocation unavailable"; return; }
   if (!silent) $("msg").textContent = "locating…";
   navigator.geolocation.getCurrentPosition(
-    (p) => { $("msg").textContent = ""; travel({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+    (p) => { $("msg").textContent = ""; travel({ lat: p.coords.latitude, lng: p.coords.longitude }); setGeoActive(true); },
     () => { if (!silent) $("msg").textContent = "location permission denied · try searching instead"; },
     { timeout: 8000 }
   );
@@ -1477,6 +1485,7 @@ $("q").addEventListener("input", (e) => {
           box.classList.remove("open");
           $("q").blur();
           travel({ lat: res.latitude, lng: res.longitude }, res.name);
+          setGeoActive(false);
         });
         box.appendChild(b);
       });
