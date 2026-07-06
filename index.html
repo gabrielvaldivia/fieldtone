@@ -538,6 +538,34 @@ const REGISTERS = [
   { id: "bright", lo: 68, hi: 96 },
 ];
 
+/* ARRANGEMENT FORMS — the macro-shape of a place, the single biggest driver of
+   variety. Each reshapes WHAT plays and how much space it sits in; all stay
+   ambient (no drum groove). padMode: prog = chords change; hold = one static
+   swell; thin = quiet pad; none = no pad (harmony still drives the melody).
+   dry pulls reverb down + timbre forward; space pushes it cavernous; dens
+   scales note density; gaps = how often things fall silent; padReg = which
+   register the pad occupies (hollow = bass + high, empty middle). */
+const FORMS = {
+  wash:        { id:"wash",        padMode:"prog", padLevel:1.0,  padReg:"mid",    droneMul:1.0,  meloLo:1, meloHi:3, meloLvl:1.0,  dry:0.30, space:0.35, dens:1.0,  gaps:0.10, airMul:1.0 },
+  drone:       { id:"drone",       padMode:"hold", padLevel:1.05, padReg:"low",    droneMul:1.5,  meloLo:0, meloHi:1, meloLvl:0.6,  dry:0.15, space:0.85, dens:0.5,  gaps:0.12, airMul:1.3 },
+  pointillist: { id:"pointillist", padMode:"none", padLevel:0.0,  padReg:"mid",    droneMul:0.2,  meloLo:1, meloHi:2, meloLvl:1.0,  dry:0.70, space:0.22, dens:0.32, gaps:0.65, airMul:0.7 },
+  melody:      { id:"melody",      padMode:"prog", padLevel:0.55, padReg:"mid",    droneMul:0.5,  meloLo:1, meloHi:1, meloLvl:1.35, dry:0.55, space:0.30, dens:1.1,  gaps:0.10, airMul:0.8 },
+  interlock:   { id:"interlock",   padMode:"thin", padLevel:0.35, padReg:"high",   droneMul:0.3,  meloLo:3, meloHi:4, meloLvl:0.9,  dry:0.45, space:0.40, dens:1.15, gaps:0.05, airMul:0.8 },
+  textural:    { id:"textural",    padMode:"hold", padLevel:0.5,  padReg:"hollow", droneMul:1.25, meloLo:0, meloHi:1, meloLvl:0.5,  dry:0.25, space:0.70, dens:0.4,  gaps:0.35, airMul:3.2 },
+};
+/* Which forms a genre draws from (weighted by repetition), with a few
+   signature biases so certain regions have an unmistakable shape. */
+function formPool(genre) {
+  if (genre === "gamelan" || genre === "eastasian") return ["interlock", "interlock", "drone", "wash", "pointillist"];
+  if (genre === "nordic" || genre === "ambient" || genre === "drone") return ["drone", "drone", "textural", "pointillist", "wash"];
+  if (genre === "desertblues") return ["textural", "drone", "melody", "wash"];
+  if (AMBIENTG.has(genre)) return ["drone", "interlock", "wash", "pointillist", "textural"];
+  if (ELECTROG.has(genre)) return ["interlock", "wash", "melody", "interlock", "drone"];
+  if (PLUCKYG.has(genre))  return ["melody", "wash", "interlock", "melody", "pointillist"];
+  return ["wash", "melody", "wash", "pointillist", "drone"];   // urban: hiphop/lofi/jazz/blues
+}
+const PAD_RANGES = { mid: [48, 76], low: [34, 58], high: [60, 84], hollow: [64, 86] };
+
 /* One melodic voice: an instrument + a behaviour + register window + params. */
 function makeMeloVoice(kindId, behavior, lo, hi, level, rng) {
   const v = { kindId, behavior, lo, hi, level, pan: (rng() * 2 - 1) * 0.5 };
@@ -595,37 +623,54 @@ function makeCharacter(lat, lng) {
   const crackle = Math.min(1, G.crackle * (0.5 + rng()));    // surface noise — part of the mood palette
   const kit = "none";
 
-  // arrangement — the genre decides how likely a drone wash is; when there is
-  // no drone, the chord pad always carries the harmony (never an empty room)
-  const hasDrone = rng() < Math.max(0.35, G.droneChance);
-  const hasPad = hasDrone ? (rng() < 0.75) : true;
-  const droneLevel = hasDrone ? Math.max(0.5, G.drone) : 0;
-  // ---- melodic voices: instrument(s) + behaviour, per location ----
+  // ---- ARRANGEMENT FORM: the macro-shape (drone / wash / pointillist / … ) ----
+  const form = FORMS[pick(formPool(genre))];        // character tier: stable per place
+  const padMode = form.padMode;                     // prog | hold | thin | none
+  const padRange = PAD_RANGES[form.padReg];
+  const padLo = padRange[0], padHi = padRange[1];
+  const hasPad = padMode !== "none";
+  const padLevelMul = form.padLevel;
+  const padRest = form.gaps * 0.6;                  // chance the pad rests a cycle, so it isn't always on
+  const densityMul = form.dens;
+  // a drone wash, its level scaled by the form (drone/textural lean heavy on it)
+  const wantDrone = form.droneMul >= 0.9 || rng() < G.droneChance;
+  const hasDrone = wantDrone && form.droneMul > 0.05;
+  const droneLevel = hasDrone ? Math.max(0.4, G.drone) * form.droneMul : 0;
+
+  // ---- melodic voices: instrument(s) + behaviour; the FORM sets how many ----
   const pool = leadPool(genre, G);
   const rpick = (arr) => arr[Math.floor(rng() * arr.length)];    // instrument/behaviour are part of the place's character
   const primaryId = rpick(pool);
-  const behavior = rpick(behaviorPool(genre));
+  const behavior = form.id === "interlock" ? "fragments" : rpick(behaviorPool(genre));
   const leadKind = LEAD_KINDS.find((k) => k.id === primaryId) || LEAD_KINDS[0];   // kept for compat
   const register = REGISTERS[Math.floor(rng() * REGISTERS.length)];   // the place's register: bass ↔ bright
-  const layers = 1 + Math.floor(srng() * srng() * 3);           // 1–3, mostly 1 (this visit's fullness)
-  const melo = [makeMeloVoice(primaryId, behavior, register.lo, register.hi, 1, srng)];
+  const floorVoices = (padMode === "none" && !hasDrone) ? 1 : 0;     // never a truly silent room
+  const meloCount = Math.max(floorVoices, form.meloLo + Math.floor(srng() * (form.meloHi - form.meloLo + 1)));
   const ACCOMP = ["sustained", "scatter", "fragments"];         // companions stay out of the way
-  for (let i = 1; i < layers; i++) {
-    const roll = srng();
-    let lo, hi, beh2;
-    if (roll < 0.42) { lo = Math.max(22, register.lo - 15); hi = register.lo + 5; beh2 = "sustained"; }       // a bassline underneath
-    else if (roll < 0.66) { lo = register.hi - 5; hi = Math.min(100, register.hi + 16); beh2 = spick(["scatter", "fragments"]); }  // sparkle above
-    else { lo = register.lo; hi = register.hi; beh2 = spick(ACCOMP); }                                        // same register
-    melo.push(makeMeloVoice(spick(pool), beh2, lo, hi, 0.55 + srng() * 0.25, srng));
+  const melo = [];
+  if (meloCount > 0) {
+    melo.push(makeMeloVoice(primaryId, behavior, register.lo, register.hi, 1, srng));
+    for (let i = 1; i < meloCount; i++) {
+      const roll = srng();
+      let lo, hi, beh2;
+      if (roll < 0.42) { lo = Math.max(22, register.lo - 15); hi = register.lo + 5; beh2 = "sustained"; }       // a bassline underneath
+      else if (roll < 0.66) { lo = register.hi - 5; hi = Math.min(100, register.hi + 16); beh2 = spick(["scatter", "fragments"]); }  // sparkle above
+      else { lo = register.lo; hi = register.hi; beh2 = form.id === "interlock" ? "fragments" : spick(ACCOMP); } // same register
+      melo.push(makeMeloVoice(spick(pool), beh2, lo, hi, 0.55 + srng() * 0.25, srng));
+    }
   }
+  melo.forEach((v) => { v.level *= form.meloLvl; });            // foreground melody vs buried wash
 
-  // the "space" — the genre sets the room, from intimate to cathedral
-  const reverbDecay = rangePick(rng, G.verb);
-  const reverbWet = 0.38 + rng() * 0.3;
+  // the "space" — genre sets a base room, the FORM pushes it dry↔cavernous so
+  // reverb stops blending every place into the same wash
+  let reverbDecay = rangePick(rng, G.verb);
+  let reverbWet = 0.38 + rng() * 0.3;
+  reverbWet = Math.max(0.08, Math.min(0.85, reverbWet * (1 - form.dry * 0.72) + form.space * 0.16));
+  reverbDecay = Math.max(0.6, reverbDecay * (1 + form.space * 1.1) * (1 - form.dry * 0.35));
   const delayTime = 0.16 + rng() * 0.42;
   const delayFb = 0.18 + rng() * 0.38;
   const delayWet = 0.1 + rng() * 0.32;
-  const brightBias = 0.55 + rng() * 1.5;                     // dark ↔ bright base timbre
+  const brightBias = (0.55 + rng() * 1.5) * (1 + form.dry * 0.7);   // drier places sit brighter & present
   const detune = 4 + rng() * 22;                             // chorus width, cents
 
   // continuous timbre — same palette never sounds twice the same
@@ -672,13 +717,13 @@ function makeCharacter(lat, lng) {
 
   // melodic voices sit INSIDE the atmosphere — mostly wet, their own delay +
   // reverb send, amounts unique to the place (and modulated by time of day)
-  const leadVerbAmt = 0.4 + rng() * 0.55;
+  const leadVerbAmt = (0.4 + rng() * 0.55) * (1 - form.dry * 0.6);
   const leadDelayTime = 0.16 + rng() * 0.5;
   const leadDelayFb = 0.2 + rng() * 0.45;
-  const leadDelayWet = 0.32 + rng() * 0.55;
-  const leadDry = 0.08 + rng() * 0.12;                       // just a whisper of dry signal
+  const leadDelayWet = (0.32 + rng() * 0.55) * (1 - form.dry * 0.5);
+  const leadDry = (0.08 + rng() * 0.12) * (1 + form.dry * 2.5);   // dry forms sit right up front
 
-  const air = 0.03 + rng() * 0.09;
+  const air = (0.03 + rng() * 0.09) * form.airMul;           // textural places push the wind bed forward
   const airHz = 300 + rng() * 900;
 
   return { key, scale, palette, root, rhythm, tempo, voices,
@@ -688,6 +733,7 @@ function makeCharacter(lat, lng) {
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
     seventh, progression, chordDwell, register, padOct, melo, behavior,
+    form: form.id, padMode, padLo, padHi, padReg: form.padReg, padLevelMul, padRest, densityMul,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     kit, air, airHz };
 }
@@ -925,7 +971,7 @@ function buildEngine(char, det) {
     // chords: long swells; when present the pad carries the harmony
     let pad = null;
     if (char.hasPad) {
-      const padGain = track(new Tone.Gain(1).connect(reverb));
+      const padGain = track(new Tone.Gain(char.padLevelMul == null ? 1 : char.padLevelMul).connect(reverb));
       padGainNode = padGain;
       pad = track(new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: char.padType || "triangle" },
@@ -935,17 +981,21 @@ function buildEngine(char, det) {
     }
     let ci = 0;
     const chordClock = new Tone.Loop((time) => {
-      const di = songProg[ci % songProg.length];
+      // "hold" forms stay on one chord (a static swell); the rest walk the progression
+      const di = songProg[(char.padMode === "hold" ? 0 : ci) % songProg.length];
       const tones = triad(char.scale, di, char.seventh);
       chord.offset = tones[0];                 // drones + fragments follow the changes
       harmony.tones = tones;
       harmony.deg = di;                        // the arp walks the scale from this degree
-      if (pad) {
+      const rest = char.padRest && Math.random() < char.padRest;   // the pad sometimes drops out entirely
+      if (pad && !rest) {
+        const plo = char.padLo || 36, phi = char.padHi || 76;
         const freqs = tones.map((t) => {
           let pm = rootNow + t + 12 * char.padOct;
-          while (pm > 76) pm -= 12; while (pm < 36) pm += 12;   // fold to range, keep the chord tone
+          while (pm > phi) pm -= 12; while (pm < plo) pm += 12;   // fold to the pad's register, keep the chord tone
           return Tone.Frequency(pm, "midi").toFrequency();
         });
+        if (char.padReg === "hollow") freqs.push(Tone.Frequency(Math.max(28, rootNow - 12), "midi").toFrequency());  // sub under an empty middle
         pad.triggerAttackRelease(freqs, char.chordDwell * 0.85, time);
       }
       ci++;
@@ -994,7 +1044,7 @@ function buildEngine(char, det) {
     // the halo doubles a note an octave down — but skip it for low/bass voices
     const haloNote = (midi, len, when, vel) => { if (midi >= 54) halo.triggerAttackRelease(Tone.Frequency(midi - 12, "midi"), len, when, vel); };
     // wind + daylight stir the voices awake; night and stillness thin them out
-    const liven = () => 0.4 + params.density * 0.25 + params.wind * 0.25;
+    const liven = () => (0.4 + params.density * 0.25 + params.wind * 0.25) * (char.densityMul == null ? 1 : char.densityMul);
 
     // build each melodic voice: an instrument + a behaviour, into the wet bus
     char.melo.forEach((mv, vi) => {
