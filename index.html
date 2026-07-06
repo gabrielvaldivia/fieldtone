@@ -54,7 +54,7 @@
   #msg { margin-top: 6px; min-height: 12px; }
 
   /* the cymatics field — fills the screen, sits over the sky gradient, under the HUD */
-  #gl { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 0; display: block; }
+  #gl { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 0; display: block; pointer-events: none; }
   /* one-time invitation; fades away for good after the first touch */
   #hint {
     position: fixed; left: 50%; top: 50%;
@@ -1466,6 +1466,9 @@ async function ensureAudio() {
   audioStarting = true;
   try {
     await Tone.start();
+    // if the gesture didn't actually unlock the context (iOS is picky), bail
+    // without marking started so the next tap/touchend/click can retry
+    if (Tone.getContext().state !== "running") return;
     if (!cyAnalyser) {                  // tap the master output so the field can listen
       cyAnalyser = new Tone.Analyser("fft", 512);   // fine resolution in the musical low end
       cyWave = new Tone.Analyser("waveform", 256);
@@ -1501,14 +1504,16 @@ function togglePlay() {
     applyConditions();
   }
 }
-/* One gesture starts the audio; every later tap on the field (not the HUD
-   search/locate) toggles pause. Pointer events cover mouse + touch. */
+/* The first interaction of ANY kind starts the audio — pointerdown, touchend
+   and click are all listened for because iOS unlocks audio on some and not
+   others. Afterwards, only a tap on the field (not the HUD) toggles pause, and
+   only on pointerdown so the multiple events of one tap don't double-fire. */
 function fieldGesture(e) {
-  if (e.target.closest && e.target.closest(".corner")) { if (!audioStarted) ensureAudio(); return; }
-  if (!audioStarted) ensureAudio(); else togglePlay();
+  const onHud = e.target && e.target.closest && e.target.closest(".corner");
+  if (!audioStarted) { ensureAudio(); return; }
+  if (!onHud && e.type === "pointerdown") togglePlay();
 }
-window.addEventListener("pointerdown", fieldGesture);
-window.addEventListener("keydown", (e) => { if (!audioStarted) ensureAudio(); });
+["pointerdown", "touchend", "click", "keydown"].forEach((ev) => window.addEventListener(ev, fieldGesture));
 
 /* the locate toggle fills in when the view IS your real location, and empties
    to a ring when you've navigated somewhere else via search */
@@ -1651,8 +1656,8 @@ void main(){
   float lw = 0.014 + energy*0.02;
   float line = 1.0 - smoothstep(lw, lw + w + 0.004, d);
   float halo = (1.0 - smoothstep(0.0, 0.55, d)) * (0.04 + energy*0.03);
-  float alpha = (line*(0.45 + 0.6*energy) + halo) * uInkA;
-  gl_FragColor = vec4(uInk, clamp(alpha, 0.0, 1.0));
+  float alpha = clamp((line*(0.45 + 0.6*energy) + halo) * uInkA, 0.0, 1.0);
+  gl_FragColor = vec4(uInk * alpha, alpha);   // premultiplied output
 }`;
 
 function cyCompile(type, src) {
@@ -1662,7 +1667,7 @@ function cyCompile(type, src) {
 }
 function initCymatics() {
   cyCanvas = $("gl");
-  const opts = { alpha:true, premultipliedAlpha:false, antialias:true, powerPreference:"low-power" };
+  const opts = { alpha:true, premultipliedAlpha:true, antialias:true, powerPreference:"low-power" };
   cyGL = cyCanvas.getContext("webgl", opts) || cyCanvas.getContext("experimental-webgl", opts);
   if (!cyGL) { cyCanvas.style.display = "none"; return; }
   cyGL.getExtension("OES_standard_derivatives");
@@ -1682,7 +1687,7 @@ function initCymatics() {
   ["uRes","uTime","uLevel","uPulse","uB0","uB1","uB2","uB3","uB4","uInk","uInkA","uPolar","uOffset","uModes","uSectors","uScale","uSpin","uMix2","uWarp","uHarm"]
     .forEach((n) => cyU[n] = cyGL.getUniformLocation(cyProg, n));
   cyGL.enable(cyGL.BLEND);
-  cyGL.blendFunc(cyGL.SRC_ALPHA, cyGL.ONE_MINUS_SRC_ALPHA);
+  cyGL.blendFunc(cyGL.ONE, cyGL.ONE_MINUS_SRC_ALPHA);   // premultiplied — composites transparently on iOS too
   cyGL.clearColor(0, 0, 0, 0);
   cyResize();
   window.addEventListener("resize", cyResize);
