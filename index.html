@@ -63,6 +63,18 @@
     opacity: 0.6; transition: opacity 1.6s ease; pointer-events: none; white-space: nowrap;
   }
   #hint.gone { opacity: 0; }
+  /* opening explanation; the body grid centres it. Fades for good on first touch.
+     The prompt lives at the bottom of the block so the whole thing stays centred. */
+  #intro {
+    position: relative; z-index: 6; width: min(86vw, 430px);
+    text-align: center; pointer-events: none;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 300;
+    font-size: clamp(12.5px, 3.4vw, 14px); line-height: 1.62;
+    color: var(--ink); opacity: 0.78; transition: opacity 1.4s ease;
+  }
+  #intro p { margin: 0 0 1em; }
+  #intro .cue { margin-top: 1.9em; }
+  #intro.gone { opacity: 0; }
 
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { *:not(#gl) { animation: none !important; } }
@@ -80,7 +92,12 @@
   <div class="corner tr"><div id="datetime" class="mono"></div></div>
 
   <canvas id="gl" aria-hidden="true"></canvas>
-  <div id="hint" class="mono">touch to begin</div>
+  <div id="intro">
+    <p>Fieldtone is a generative instrument that plays a different piece of ambient music for every place on Earth. Nothing here is recorded — every note is synthesized live in your browser, and the piece never truly ends or repeats. It's shaped by where you are, the local time of day, and the current weather, so what you hear is specific to this exact spot and this exact moment.</p>
+    <p>Your location chooses a musical world — a scale, a set of instruments, a chord progression, an arrangement — so Tokyo, the Sahara, and Nashville each sound like themselves; return to a place and you'll know it, though you'll never hear the same performance twice. The time of day brightens or darkens the sound and thickens or thins the notes, temperature warms or cools it, and wind and rain stir the texture. The rippling figure on screen is cymatics, the shape sound makes in water — so when the music swells you see more of it, and in the silence it fades to nothing.</p>
+    <div class="cue mono">touch to begin</div>
+  </div>
+  <div id="hint" class="mono"></div>
 
   <div class="corner bl"><div id="weather" class="mono"></div></div>
   <div class="corner br"><div id="wind" class="mono"></div></div>
@@ -1593,6 +1610,7 @@ async function ensureAudio() {
     state.playing = true;
     audioStarted = true;
     applyConditions();
+    const intro = $("intro"); if (intro) intro.classList.add("gone");   // dismiss the explanation for good
     // context running → reveal the field; still blocked (e.g. iOS ring/silent
     // switch) → say so instead of sitting there silent
     if (Tone.getContext().state === "running") {
