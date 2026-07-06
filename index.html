@@ -987,7 +987,8 @@ function buildEngine(char, det) {
 
   // master chain ends in a limiter so driven / dense / bit-crushed places can push
   // hard without clipping. Lo-fi places get tape wow/flutter across the whole mix.
-  const out = track(new Tone.Limiter(-1).toDestination());
+  const out = track(new Tone.Limiter(-1));
+  if (masterOut) out.connect(masterOut); else out.toDestination();   // masterOut → media element on iOS (plays in silent mode)
   // DJ master effects, post-fader — the pro trinity, bypassed by default.
   // Each is an insert with a wet knob, so pushing a fader "throws" it in.
   const space = track(new Tone.Reverb({ decay: 7, wet: 0 }).connect(out));                  // reverb throw / wash
@@ -1583,15 +1584,44 @@ function startEngine() {
   eng.master.gain.rampTo(0.95, 3.0);
 }
 const setHint = (text) => { const h = $("hint"); if (!h) return; if (text) { h.textContent = text; h.classList.remove("gone"); } else h.classList.add("gone"); };
+/* Everything the app plays runs through masterOut. On iOS the ring/silent switch
+   mutes ordinary Web Audio, so there we route masterOut through a MediaStream into
+   a hidden <audio> element — HTMLMediaElement plays through the media-playback
+   category, which ignores the switch. Everywhere else we go straight to the
+   speakers. Engines connect to masterOut instead of the raw destination. */
+let masterOut = null, mediaEl = null;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function setupMasterRoute() {
+  if (masterOut) return;
+  masterOut = new Tone.Gain(1);
+  let routed = false;
+  if (isIOS) {
+    try {
+      const raw = Tone.getContext().rawContext;
+      const streamDest = raw.createMediaStreamDestination();
+      masterOut.connect(streamDest);
+      mediaEl = document.createElement("audio");
+      mediaEl.setAttribute("playsinline", "");
+      mediaEl.srcObject = streamDest.stream;
+      mediaEl.style.display = "none";
+      document.body.appendChild(mediaEl);
+      routed = true;
+    } catch (e) {}
+  }
+  if (!routed) masterOut.toDestination();
+}
 /* iOS unlocks the AudioContext only inside a user gesture, and only for certain
    event types (often touchend/click, not pointerdown). Resume the RAW context
-   synchronously on every gesture, plus play a 1-sample silent buffer — the
-   classic unlock trick that works on stubborn iOS versions. */
+   synchronously on every gesture, build the media route, and start the <audio>
+   element (which must be triggered from the gesture), plus the classic 1-sample
+   silent-buffer unlock trick for stubborn iOS versions. */
 function unlockAudio() {
   try {
     const raw = Tone.getContext() && Tone.getContext().rawContext;
     if (!raw) return;
     if (raw.state !== "running" && raw.resume) raw.resume();
+    setupMasterRoute();
+    if (mediaEl) mediaEl.play().catch(() => {});
     if (raw.createBuffer) {
       const src = raw.createBufferSource();
       src.buffer = raw.createBuffer(1, 1, 22050);
@@ -1605,11 +1635,12 @@ async function ensureAudio() {
   audioStarting = true;
   try {
     await Tone.start();
+    setupMasterRoute();
     if (!cyAnalyser) {                  // tap the master output so the field can listen
       cyAnalyser = new Tone.Analyser("fft", 64);
       cyWave = new Tone.Analyser("waveform", 256);
-      Tone.getDestination().connect(cyAnalyser);
-      Tone.getDestination().connect(cyWave);
+      masterOut.connect(cyAnalyser);
+      masterOut.connect(cyWave);
     }
     Tone.Transport.bpm.value = state.char.tempo;
     if (Tone.Transport.state !== "started") Tone.Transport.start();
@@ -1619,14 +1650,8 @@ async function ensureAudio() {
     applyConditions();
     document.body.classList.add("begun");                               // fade the corner HUD in
     const intro = $("intro"); if (intro) intro.classList.add("gone");   // dismiss the explanation for good
-    // context running → reveal the field; still blocked (e.g. iOS ring/silent
-    // switch) → say so instead of sitting there silent
-    if (Tone.getContext().state === "running") {
-      setHint(null);
-      const g = $("gl"); if (g) g.classList.add("on");
-    } else {
-      setHint("if silent, flip the ring switch");
-    }
+    setHint(null);
+    const g = $("gl"); if (g) g.classList.add("on");
   } catch (err) {
     $("msg").textContent = "audio error: " + err.message;
     setHint("audio error — tap again");
