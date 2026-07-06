@@ -63,17 +63,17 @@
     opacity: 0.6; transition: opacity 1.6s ease; pointer-events: none; white-space: nowrap;
   }
   #hint.gone { opacity: 0; }
-  /* opening explanation; the body grid centres it. Fades for good on first touch.
-     The prompt lives at the bottom of the block so the whole thing stays centred. */
+  /* opening explanation; the body grid centres the block, text left-aligned.
+     Same mono / all-caps treatment as the HUD. Fades for good on first touch. */
   #intro {
-    position: relative; z-index: 6; width: min(86vw, 430px);
-    text-align: center; pointer-events: none;
-    font-family: 'Space Grotesk', sans-serif; font-weight: 300;
-    font-size: clamp(12.5px, 3.4vw, 14px); line-height: 1.62;
-    color: var(--ink); opacity: 0.78; transition: opacity 1.4s ease;
+    position: relative; z-index: 6; width: min(92vw, 480px);
+    text-align: left; pointer-events: none;
+    font-family: 'IBM Plex Mono', monospace; font-weight: 400;
+    font-size: 10px; letter-spacing: 0.16em; line-height: 2.05; text-transform: uppercase;
+    color: var(--ink); opacity: 0.72; transition: opacity 1.4s ease;
   }
-  #intro p { margin: 0 0 1em; }
-  #intro .cue { margin-top: 1.9em; }
+  #intro p { margin: 0 0 1.6em; }
+  #intro .cue { margin-top: 2em; color: var(--faint); }
   #intro.gone { opacity: 0; }
 
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
