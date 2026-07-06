@@ -50,7 +50,9 @@
       "Bash(node --check \"/private/tmp/claude-501/-Users-gabrielvaldivia-Documents-GitHub-fieldtone/4b1bdf02-7a0c-4f68-9c3d-339395250f97/scratchpad/check29.js\")",
       "Bash(node --check \"/private/tmp/claude-501/-Users-gabrielvaldivia-Documents-GitHub-fieldtone/4b1bdf02-7a0c-4f68-9c3d-339395250f97/scratchpad/check30.js\")",
       "Bash(git add *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://fieldtone.vercel.app)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const h=fs.readFileSync\\('index.html','utf8'\\);const m=[...h.matchAll\\(/<script>\\([\\\\s\\\\S]*?\\)<\\\\/script>/g\\)];let ok=true;m.forEach\\(\\(x,i\\)=>{try{new Function\\(x[1]\\);}catch\\(e\\){ok=false;console.log\\('script',i,'ERROR',e.message\\);}}\\);console.log\\(ok?'inline scripts parse OK':'parse errors'\\);\")"
     ]
   }
 }

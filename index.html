@@ -55,8 +55,8 @@
   #gl { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 0; display: block; }
   /* one-time invitation; fades away for good after the first touch */
   #hint {
-    position: fixed; left: 50%; bottom: max(56px, calc(env(safe-area-inset-bottom) + 44px));
-    transform: translateX(-50%); z-index: 6; color: var(--faint);
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%); z-index: 6; color: var(--faint);
     opacity: 0.6; transition: opacity 1.6s ease; pointer-events: none; white-space: nowrap;
   }
   #hint.gone { opacity: 0; }
@@ -68,8 +68,8 @@
 <body>
   <div class="corner tl">
     <div class="searchbar">
-      <input id="q" class="mono" autocomplete="off" spellcheck="false" placeholder="search…" aria-label="Current location — type to search any place on Earth">
       <button id="locate" aria-label="Use my location">◎</button>
+      <input id="q" class="mono" autocomplete="off" spellcheck="false" placeholder="search…" aria-label="Current location — type to search any place on Earth">
     </div>
     <div id="results" role="listbox"></div>
     <div id="msg" class="mono"></div>
@@ -541,8 +541,8 @@ function makeMeloVoice(kindId, behavior, lo, hi, level, rng) {
   const v = { kindId, behavior, lo, hi, level, pan: (rng() * 2 - 1) * 0.5 };
   if (behavior === "arp") {
     v.rate = ["16n", "8n", "8t", "16n", "8n", "4n"][Math.floor(rng() * 6)];   // gentle pulse
-    v.dir = ["up", "down", "updown", "random"][Math.floor(rng() * 4)];
-    v.span = 1 + Math.floor(rng() * 2);                    // 1–2 octave reach
+    v.dir = ["up", "down", "updown", "updown", "random"][Math.floor(rng() * 5)];
+    v.span = 2 + Math.floor(rng() * 2);                    // 2–3 octaves of the scale
     v.gate = 0.4 + rng() * 0.5;                             // note length vs step
     v.prob = 0.82 + rng() * 0.18;                           // the odd rest
   } else if (behavior === "sustained") {
@@ -573,8 +573,15 @@ function makeCharacter(lat, lng) {
   const G = GENRES[genre];
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
   const spick = (arr) => arr[Math.floor(srng() * arr.length)];
-  // scale: genre-appropriate, with an occasional wildcard for surprise
-  const scale = { ints: (rng() < 0.12 ? genScale(rng).ints : SC[pick(G.scales)]) };
+  // scale: genre-appropriate most of the time, but often a wildcard so the
+  // palette of scales across the world is huge — any of the 40 named scales
+  // (Hirajoshi, whole tone, double harmonic, Persian, octatonic…) or a fully
+  // procedural one. Character tier: a place keeps its scale on return.
+  const sroll = rng();
+  const scaleInts = sroll < 0.18 ? genScale(rng).ints
+    : sroll < 0.40 ? SCALES[Math.floor(rng() * SCALES.length)].ints
+    : SC[pick(G.scales)];
+  const scale = { ints: scaleInts };
   const L = scale.ints.length;
   const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
   const root = 41 + Math.floor(rng() * 12) + palette.bias;   // register bias per palette
@@ -930,6 +937,7 @@ function buildEngine(char, det) {
       const tones = triad(char.scale, di, char.seventh);
       chord.offset = tones[0];                 // drones + fragments follow the changes
       harmony.tones = tones;
+      harmony.deg = di;                        // the arp walks the scale from this degree
       if (pad) {
         const freqs = tones.map((t) => {
           let pm = rootNow + t + 12 * char.padOct;
@@ -972,6 +980,15 @@ function buildEngine(char, det) {
       while (midi > hi) midi -= 12; while (midi < lo) midi += 12;
       return midi;
     };
+    // the arp runs the SCALE (not just the chord) upward from the current
+    // chord's degree, so it moves through many notes; folded into the register
+    const scaleMidi = (pos, lo, hi) => {
+      const S = char.scale.ints, n = S.length;
+      const idx = (harmony.deg || 0) + pos;
+      let midi = rootNow + S[((idx % n) + n) % n] + 12 * Math.floor(idx / n);
+      while (midi > hi) midi -= 12; while (midi < lo) midi += 12;
+      return midi;
+    };
     // the halo doubles a note an octave down — but skip it for low/bass voices
     const haloNote = (midi, len, when, vel) => { if (midi >= 54) halo.triggerAttackRelease(Tone.Frequency(midi - 12, "midi"), len, when, vel); };
     // wind + daylight stir the voices awake; night and stillness thin them out
@@ -991,13 +1008,13 @@ function buildEngine(char, det) {
         let step = 0;
         const loop = new Tone.Loop((time) => {
           if (Math.random() > mv.prob * liven()) { step++; return; }
-          const seqLen = harmony.tones.length * spanN;
+          const seqLen = char.scale.ints.length * spanN;
           let pos;
           if (mv.dir === "up") pos = step % seqLen;
           else if (mv.dir === "down") pos = seqLen - 1 - (step % seqLen);
           else if (mv.dir === "updown") { const p = step % (2 * seqLen - 2 || 1); pos = p < seqLen ? p : 2 * seqLen - 2 - p; }
           else pos = Math.floor(Math.random() * seqLen);
-          const midi = toMidi(pos, mv.lo, mv.hi);
+          const midi = scaleMidi(pos, mv.lo, mv.hi);
           const dur = Tone.Time(mv.rate).toSeconds() * mv.gate;
           play(Tone.Frequency(midi, "midi"), dur, time, 0.5 + Math.random() * 0.3);
           step++;
@@ -1379,6 +1396,7 @@ function startEngine() {
   eng.setMix(mix);
   eng.master.gain.rampTo(0.95, 3.0);
 }
+const setHint = (text) => { const h = $("hint"); if (!h) return; if (text) { h.textContent = text; h.classList.remove("gone"); } else h.classList.add("gone"); };
 async function ensureAudio() {
   if (audioStarted || audioStarting) return;
   audioStarting = true;
@@ -1395,7 +1413,7 @@ async function ensureAudio() {
     startEngine();
     state.playing = true;
     audioStarted = true;
-    const h = $("hint"); if (h) h.classList.add("gone");
+    setHint(null);
     applyConditions();
   } catch (err) {
     $("msg").textContent = "audio error: " + err.message;
@@ -1403,8 +1421,30 @@ async function ensureAudio() {
     audioStarting = false;
   }
 }
-["pointerdown", "keydown", "touchstart"].forEach((ev) =>
-  window.addEventListener(ev, ensureAudio, { passive: true }));
+/* After it's begun, a tap anywhere on the field pauses; tap again to resume. */
+function togglePlay() {
+  if (audioStarting) return;
+  if (state.playing) {
+    state.playing = false;
+    stopAll(1.2);
+    Tone.Transport.stop();             // halt every loop — nothing keeps sounding
+    setHint("paused");
+  } else {
+    if (Tone.Transport.state !== "started") Tone.Transport.start();
+    startEngine();
+    state.playing = true;
+    setHint(null);
+    applyConditions();
+  }
+}
+/* One gesture starts the audio; every later tap on the field (not the HUD
+   search/locate) toggles pause. Pointer events cover mouse + touch. */
+function fieldGesture(e) {
+  if (e.target.closest && e.target.closest(".corner")) { if (!audioStarted) ensureAudio(); return; }
+  if (!audioStarted) ensureAudio(); else togglePlay();
+}
+window.addEventListener("pointerdown", fieldGesture);
+window.addEventListener("keydown", (e) => { if (!audioStarted) ensureAudio(); });
 
 function locate(silent) {
   if (!navigator.geolocation) { if (!silent) $("msg").textContent = "geolocation unavailable"; return; }
