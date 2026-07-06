@@ -512,10 +512,10 @@ const AMBIENTG = new Set(["ambient", "nordic", "drone", "gamelan", "indian", "cl
 const PLUCKYG  = new Set(["bluegrass", "celtic", "country", "flamenco", "mediterranean", "latin", "bossa", "andean", "afrobeat", "desertblues", "salsa", "tango"]);
 const ELECTROG = new Set(["cyberpunk", "techno", "house", "kpop", "dnb", "trap", "gfunk", "balkan", "footwork"]);
 function behaviorPool(genre) {
-  if (AMBIENTG.has(genre)) return ["sustained", "fragments", "sustained", "scatter", "fragments"];
-  if (ELECTROG.has(genre)) return ["arp", "arp", "fragments", "arp", "sustained"];
-  if (PLUCKYG.has(genre))  return ["arp", "fragments", "fragments", "arp", "sustained"];
-  return ["fragments", "arp", "sustained", "scatter", "fragments"];
+  if (AMBIENTG.has(genre)) return ["sustained", "line", "sustained", "fragments", "line"];
+  if (ELECTROG.has(genre)) return ["arp", "line", "line", "arp", "fragments"];
+  if (PLUCKYG.has(genre))  return ["line", "fragments", "line", "arp", "sustained"];
+  return ["line", "line", "sustained", "fragments", "arp"];
 }
 function leadPool(genre, G) {
   const extra = AMBIENTG.has(genre) ? ["choir", "organ", "crystal", "vox", "glass"]
@@ -569,25 +569,21 @@ const PAD_RANGES = { mid: [48, 76], low: [34, 58], high: [60, 84], hollow: [64, 
 /* One melodic voice: an instrument + a behaviour + register window + params. */
 function makeMeloVoice(kindId, behavior, lo, hi, level, rng) {
   const v = { kindId, behavior, lo, hi, level, pan: (rng() * 2 - 1) * 0.5 };
-  if (behavior === "arp") {
-    v.rate = ["16n", "8n", "8t", "16n", "8n", "4n"][Math.floor(rng() * 6)];   // gentle pulse
-    v.dir = ["up", "down", "updown", "updown", "random"][Math.floor(rng() * 5)];
-    v.span = 2 + Math.floor(rng() * 2);                    // 2–3 octaves of the scale
-    v.gate = 0.4 + rng() * 0.5;                             // note length vs step
-    v.prob = 0.82 + rng() * 0.18;                           // the odd rest
-  } else if (behavior === "sustained") {
-    v.interval = 5 + rng() * 10;                            // seconds per note
-    v.noteLen = v.interval * (0.8 + rng() * 0.3);
-  } else if (behavior === "scatter") {
-    v.interval = 1.3 + rng() * 2.6;
-    v.prob = 0.2 + rng() * 0.3;
-    v.noteLen = 1.8 + rng() * 3;
-    v.wide = rng() < 0.5;                                   // sometimes leaps octaves
-  } else {                                                 // fragments
+  // every melodic voice PHRASES on a grid: a short run of notes, then a rest to
+  // breathe — like a spoken line. Note lengths vary within the phrase.
+  v.step = ["4n", "4n", "4n.", "2n", "8n", "4n"][Math.floor(rng() * 6)];   // the underlying pulse
+  v.notes = 3 + Math.floor(rng() * 4);                     // 3–6 notes per phrase
+  v.restLo = 2 + Math.floor(rng() * 3);                    // steps of silence between phrases
+  v.restHi = v.restLo + 2 + Math.floor(rng() * 4);
+  if (behavior === "arp") {                                // a gentle BROKEN CHORD (chord tones only)
+    v.span = 1 + Math.floor(rng() * 2);                    // over 1–2 octaves
+    v.dir = ["up", "down", "updown"][Math.floor(rng() * 3)];
+  } else if (behavior === "fragments") {
     const n = 2 + Math.floor(rng() * 3);
     v.fragments = [];
     for (let i = 0; i < n; i++) v.fragments.push(genFragment(rng, i));
   }
+  // "line" (default) and "sustained" need no extra params
   return v;
 }
 
@@ -646,7 +642,7 @@ function makeCharacter(lat, lng) {
   const register = REGISTERS[Math.floor(rng() * REGISTERS.length)];   // the place's register: bass ↔ bright
   const floorVoices = (padMode === "none" && !hasDrone) ? 1 : 0;     // never a truly silent room
   const meloCount = Math.max(floorVoices, form.meloLo + Math.floor(srng() * (form.meloHi - form.meloLo + 1)));
-  const ACCOMP = ["sustained", "scatter", "fragments"];         // companions stay out of the way
+  const ACCOMP = ["sustained", "line", "fragments"];            // companions stay out of the way
   const melo = [];
   if (meloCount > 0) {
     melo.push(makeMeloVoice(primaryId, behavior, register.lo, register.hi, 1, srng));
@@ -654,7 +650,7 @@ function makeCharacter(lat, lng) {
       const roll = srng();
       let lo, hi, beh2;
       if (roll < 0.42) { lo = Math.max(22, register.lo - 15); hi = register.lo + 5; beh2 = "sustained"; }       // a bassline underneath
-      else if (roll < 0.66) { lo = register.hi - 5; hi = Math.min(100, register.hi + 16); beh2 = spick(["scatter", "fragments"]); }  // sparkle above
+      else if (roll < 0.66) { lo = register.hi - 5; hi = Math.min(100, register.hi + 16); beh2 = spick(["line", "fragments"]); }  // sparkle above
       else { lo = register.lo; hi = register.hi; beh2 = form.id === "interlock" ? "fragments" : spick(ACCOMP); } // same register
       melo.push(makeMeloVoice(spick(pool), beh2, lo, hi, 0.55 + srng() * 0.25, srng));
     }
@@ -1043,14 +1039,30 @@ function buildEngine(char, det) {
       while (midi > hi) midi -= 12; while (midi < lo) midi += 12;
       return midi;
     };
-    // the arp runs the SCALE (not just the chord) upward from the current
-    // chord's degree, so it moves through many notes; folded into the register
-    const scaleMidi = (pos, lo, hi) => {
-      const S = char.scale.ints, n = S.length;
-      const idx = (harmony.deg || 0) + pos;
-      let midi = rootNow + S[((idx % n) + n) % n] + 12 * Math.floor(idx / n);
+    // map a scale-degree to a pitch in the register. With `near` set (a melodic
+    // line), pick the octave CLOSEST to the previous note so a stepwise degree
+    // move is a stepwise pitch move — proper voice leading, no fold-jumps.
+    // Without it (a broken chord) the degree's own octave is kept.
+    const degMidi = (deg, lo, hi, near) => {
+      const S = char.scale.ints, L = S.length;
+      let midi = (near == null)
+        ? rootNow + S[((deg % L) + L) % L] + 12 * Math.floor(deg / L)
+        : rootNow + S[((deg % L) + L) % L];
       while (midi > hi) midi -= 12; while (midi < lo) midi += 12;
+      if (near != null) {
+        let best = midi, bd = Math.abs(midi - near);
+        for (const alt of [midi - 12, midi + 12]) if (alt >= lo && alt <= hi && Math.abs(alt - near) < bd) { bd = Math.abs(alt - near); best = alt; }
+        midi = best;
+      }
       return midi;
+    };
+    // the current chord's tones as absolute scale-degree indices (stacked thirds)
+    const chordDegs = () => { const d = harmony.deg || 0; return char.seventh ? [d, d + 2, d + 4, d + 6] : [d, d + 2, d + 4]; };
+    // nearest chord tone to a degree, so lines resolve onto the harmony
+    const nearChord = (deg) => {
+      const L = char.scale.ints.length; let best = deg, bd = 1e9;
+      for (const b of chordDegs()) for (let k = -2; k <= 2; k++) { const c = b + k * L, dd = Math.abs(c - deg); if (dd < bd) { bd = dd; best = c; } }
+      return best;
     };
     // the halo doubles a note an octave down — but skip it for low/bass voices
     const haloNote = (midi, len, when, vel) => { if (midi >= 54) halo.triggerAttackRelease(Tone.Frequency(midi - 12, "midi"), len, when, vel); };
@@ -1066,49 +1078,7 @@ function buildEngine(char, det) {
       const ctl = { behavior: mv.behavior, kindId: mv.kindId, level: mv.level, gain: vgain };
       meloCtl.push(ctl);
 
-      if (mv.behavior === "arp") {                    // a moving sequence with a gentle pulse
-        const spanN = mv.span;
-        let step = 0;
-        const loop = new Tone.Loop((time) => {
-          if (Math.random() > mv.prob * liven()) { step++; return; }
-          const seqLen = char.scale.ints.length * spanN;
-          let pos;
-          if (mv.dir === "up") pos = step % seqLen;
-          else if (mv.dir === "down") pos = seqLen - 1 - (step % seqLen);
-          else if (mv.dir === "updown") { const p = step % (2 * seqLen - 2 || 1); pos = p < seqLen ? p : 2 * seqLen - 2 - p; }
-          else pos = Math.floor(Math.random() * seqLen);
-          const midi = scaleMidi(pos, mv.lo, mv.hi);
-          const dur = Tone.Time(mv.rate).toSeconds() * mv.gate;
-          play(Tone.Frequency(midi, "midi"), dur, time, 0.5 + Math.random() * 0.3);
-          step++;
-        }, mv.rate);
-        loop.start(0.1);
-        loops.push(loop);
-        ctl.loop = loop;
-      } else if (mv.behavior === "sustained") {       // one long legato tone at a time, wandering
-        let deg = 0;
-        const loop = new Tone.Loop((time) => {
-          if (Math.random() > 0.5 + liven() * 0.4) return;
-          deg += [-2, -1, 0, 1, 2][Math.floor(Math.random() * 5)];
-          const midi = toMidi(((deg % 3) + 3) % 3, mv.lo, mv.hi);
-          play(Tone.Frequency(midi, "midi"), mv.noteLen, time, 0.7);
-          haloNote(midi, mv.noteLen * 1.2, time + 0.08, 0.5);
-        }, mv.interval);
-        loop.start(Math.random() * mv.interval);
-        loops.push(loop);
-        ctl.loop = loop;
-      } else if (mv.behavior === "scatter") {         // sparse random single notes
-        const loop = new Tone.Loop((time) => {
-          if (Math.random() > mv.prob * liven()) return;
-          const span = mv.wide ? 3 : 2;
-          const pos = Math.floor(Math.random() * harmony.tones.length * span);
-          const midi = toMidi(pos, mv.lo, mv.hi);
-          play(Tone.Frequency(midi, "midi"), mv.noteLen, time, 0.5 + Math.random() * 0.35);
-        }, mv.interval);
-        loop.start(Math.random() * mv.interval);
-        loops.push(loop);
-        ctl.loop = loop;
-      } else {                                        // fragments — phasing chord-tone figures
+      if (mv.behavior === "fragments") {              // phasing chord-tone figures (texture layer)
         ctl.figs = mv.fragments.map((f) => f);
         mv.fragments.forEach((f, fi) => {
           const loop = new Tone.Loop((time) => {
@@ -1124,6 +1094,59 @@ function buildEngine(char, det) {
           loop.start(0.5 + Math.random() * 4);
           loops.push(loop);
         });
+      } else {
+        /* A phrased, CHORD-FOLLOWING line. Notes move stepwise through the
+           scale and resolve onto chord tones, grouped into short phrases with a
+           rest between them (breathing). "arp" instead outlines the chord as a
+           gentle broken chord (chord tones only); "sustained" holds longer. */
+        const stepSec = Tone.Time(mv.step).toSeconds();
+        let phrase = [], pi = 0, hold = 0, rest = 0, curDeg = null, prevMidi = null;
+        const makePhrase = () => {
+          const L = char.scale.ints.length, evs = [];
+          if (curDeg == null) curDeg = chordDegs()[0];
+          if (mv.behavior === "arp") {                  // broken chord across 1–2 octaves
+            const ct = chordDegs(), seq = [];
+            for (let o = 0; o < (mv.span || 1); o++) for (const c of ct) seq.push(c + o * L);
+            let order = seq;
+            if (mv.dir === "down") order = seq.slice().reverse();
+            else if (mv.dir === "updown") order = seq.concat(seq.slice(1, -1).reverse());
+            order.forEach((d, i) => { const last = i === order.length - 1; evs.push({ deg: d, dur: last ? 2 + Math.floor(Math.random() * 2) : (Math.random() < 0.3 ? 2 : 1) }); });
+            curDeg = order[order.length - 1];
+          } else {                                      // flowing line (or long "sustained")
+            const long = mv.behavior === "sustained";
+            const n = long ? 2 + Math.floor(Math.random() * 2) : mv.notes;
+            let deg = nearChord(curDeg);
+            for (let i = 0; i < n; i++) {
+              const durSet = long ? [3, 4, 5, 6] : [1, 1, 2, 2, 3];
+              evs.push({ deg, dur: durSet[Math.floor(Math.random() * durSet.length)] });
+              if (i === n - 2) deg = nearChord(deg + (Math.random() < 0.5 ? 1 : -1));         // approach the cadence
+              else if (i < n - 1) { deg += Math.random() < 0.72 ? (Math.random() < 0.5 ? 1 : -1) : (Math.random() < 0.5 ? 2 : -2); if (Math.random() < 0.28) deg = nearChord(deg); }
+            }
+            evs[evs.length - 1].deg = nearChord(evs[evs.length - 1].deg);   // resolve home onto a chord tone
+            curDeg = evs[evs.length - 1].deg;
+          }
+          return evs;
+        };
+        const loop = new Tone.Loop((time) => {
+          if (hold > 0) { hold--; return; }             // still holding a long note
+          if (rest > 0) { rest--; return; }             // silence between phrases
+          if (pi >= phrase.length) {                    // phrase done → breathe, then a fresh one
+            phrase = makePhrase(); pi = 0;
+            rest = mv.restLo + Math.floor(Math.random() * (mv.restHi - mv.restLo + 1));
+            if (Math.random() > 0.45 + liven() * 0.55) rest += 3;   // thin out when quiet
+            return;
+          }
+          const ev = phrase[pi++];
+          const midi = degMidi(ev.deg, mv.lo, mv.hi, mv.behavior === "arp" ? null : prevMidi);
+          prevMidi = midi;
+          const durSec = ev.dur * stepSec * 0.92;
+          play(Tone.Frequency(midi, "midi"), durSec, time, 0.48 + Math.random() * 0.24);
+          if (mv.behavior === "sustained" || ev.dur >= 3) haloNote(midi, durSec * 1.2, time + 0.06, 0.5);
+          hold = ev.dur - 1;
+        }, mv.step);
+        loop.start(0.1 + Math.random() * 2);
+        loops.push(loop);
+        ctl.loop = loop;
       }
     });
   }
