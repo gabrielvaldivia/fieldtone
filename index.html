@@ -900,7 +900,15 @@ function makeLeadKind(K, dest, track) {
   K = K || LEAD_KINDS[0];
   const synth = track(K.build().connect(dest));
   try { synth.volume.value = K.vol; } catch (e) {}
-  return (freq, dur, time, vel) => K.attackOnly ? synth.triggerAttack(freq, time, vel) : synth.triggerAttackRelease(freq, dur, time, vel);
+  return (freq, dur, time, vel) => {
+    // strike the cymatics exactly when the note sounds; pitch picks the band it bends
+    if (Tone.Draw) {
+      const hz = (typeof freq === "number") ? freq : Tone.Frequency(freq).toFrequency();
+      const tone = Math.max(0, Math.min(1, (Math.log2(hz + 1) - 5) / 5));   // ~32Hz→0 … ~1kHz→1
+      Tone.Draw.schedule(() => cyStrike(0.10 + 0.20 * (vel == null ? 0.5 : vel), null, tone), time);
+    }
+    return K.attackOnly ? synth.triggerAttack(freq, time, vel) : synth.triggerAttackRelease(freq, dur, time, vel);
+  };
 }
 function makeLead(char, dest, track) { return makeLeadKind(char.leadKind, dest, track); }
 
@@ -987,6 +995,9 @@ function buildEngine(char, det) {
       chord.offset = tones[0];                 // drones + fragments follow the changes
       harmony.tones = tones;
       harmony.deg = di;                        // the arp walks the scale from this degree
+      // strike the plate on every chord and hand it the new harmony → the figure
+      // reorganises and reorients each time the chords move
+      if (typeof cyStrike === "function") Tone.Draw.schedule(() => cyStrike(0.6, (di + 0.5) / char.scale.ints.length), time);
       const rest = char.padRest && Math.random() < char.padRest;   // the pad sometimes drops out entirely
       if (pad && !rest) {
         const plo = char.padLo || 36, phi = char.padHi || 76;
@@ -1127,6 +1138,7 @@ function buildEngine(char, det) {
     Tone.Frequency(char.root + 7, "midi").toFrequency(),
     Tone.Frequency(char.root + 12 + char.scale.ints[1], "midi").toFrequency(),
   ], 8, Tone.now() + 0.1);
+  if (typeof cyStrike === "function") cyStrike(0.9, 0.0);   // a strong opening strike as the place blooms in
 
   /* rain shimmer — probability follows live precipitation */
   const plink = track(new Tone.Synth({
@@ -1455,7 +1467,7 @@ async function ensureAudio() {
   try {
     await Tone.start();
     if (!cyAnalyser) {                  // tap the master output so the field can listen
-      cyAnalyser = new Tone.Analyser("fft", 64);
+      cyAnalyser = new Tone.Analyser("fft", 512);   // fine resolution in the musical low end
       cyWave = new Tone.Analyser("waveform", 256);
       Tone.getDestination().connect(cyAnalyser);
       Tone.getDestination().connect(cyWave);
@@ -1567,45 +1579,79 @@ document.addEventListener("click", (e) => {
 let cyGL = null, cyProg = null, cyCanvas = null, cyRAF = 0, cyStart = 0;
 let cyAnalyser = null, cyWave = null;
 const cyU = {};
-const cyState  = { polar:0, offX:0, offY:0, n1:5, m1:3, n2:4, m2:6, sectors:5, scale:4, spin:0.02, mix2:0.35, inkR:0.92, inkG:0.93, inkB:0.98, inkA:0.6 };
+const cyState  = { polar:0, offX:0, offY:0, n1:5, m1:3, n2:4, m2:6, sectors:5, scale:4, spin:0.02, mix2:0.35, warp:0.1, inkR:0.92, inkG:0.93, inkB:0.98, inkA:0.6 };
 const cyTarget = Object.assign({}, cyState);
-const cyAud    = { level:0, bass:0, mid:0, treble:0 };
+// per-band audio envelopes (sub→bright), overall level, an onset pulse, and the
+// current harmony position (set by the engine on each chord, morphs the figure)
+const cyAud    = { level:0, pulse:0, harm:0, harmT:0, b0:0, b1:0, b2:0, b3:0, b4:0 };
+const cyPrev   = [0, 0, 0, 0, 0];   // last frame's raw band energies, for onset flux
 const CY_KEYS  = Object.keys(cyState);
+const CY_BK    = ["b0", "b1", "b2", "b3", "b4"];
+
+/* The engine calls this on real musical events (chord changes, note onsets) so
+   the plate is struck exactly when a sound enters — the surest way to make the
+   pattern reorganise WITH the music rather than just track its loudness.
+   strength = ripple size; harm 0..1 = harmony position (reshapes the figure);
+   tone 0..1 = note pitch low→high (kicks the matching band, so different notes
+   bend different modes). */
+function cyStrike(strength, harm, tone) {
+  cyAud.pulse = Math.min(1.0, cyAud.pulse + strength);
+  if (harm != null) cyAud.harmT = harm;
+  if (tone != null) { const i = Math.max(0, Math.min(4, Math.round(tone * 4))); cyAud[CY_BK[i]] = Math.min(1, cyAud[CY_BK[i]] + strength * 0.9); }
+}
 
 const CY_VERT = "attribute vec2 aPos; void main(){ gl_Position = vec4(aPos,0.0,1.0); }";
 const CY_FRAG = `#extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec2 uRes; uniform float uTime;
-uniform float uLevel, uBass, uMid, uTreble;
+uniform float uLevel, uPulse;
+uniform float uB0, uB1, uB2, uB3, uB4;         // sub · bass · lo-mid · mid · high
 uniform vec3 uInk; uniform float uInkA;
 uniform float uPolar; uniform vec2 uOffset;
-uniform vec4 uModes; uniform float uSectors, uScale, uSpin, uMix2;
+uniform vec4 uModes; uniform float uSectors, uScale, uSpin, uMix2, uWarp, uHarm;
 mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
 float chladni(vec2 p, float n, float m){ return cos(n*p.x)*cos(m*p.y) - cos(m*p.x)*cos(n*p.y); }
 void main(){
   vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / min(uRes.x, uRes.y);
-  vec2 c = rot(uSpin*uTime) * (uv - uOffset);
-  float drive = clamp(uBass*0.7 + uLevel*1.6, 0.0, 1.0);   // how hard the plate is driven
-  float breath = 1.0 + uBass*0.16 + 0.03*sin(uTime*0.13);
+  // each chord reorients the plate, so a harmony change visibly turns the figure
+  vec2 c = rot(uSpin*uTime + uHarm*2.2) * (uv - uOffset);
+  float energy = clamp(uLevel*1.3 + uB1*0.5 + uB3*0.4, 0.0, 1.0);   // overall drive for brightness
+  // only a whisper of zoom now — the motion should come from the pattern itself
+  float breath = 1.0 + uB0*0.05 + uPulse*0.05 + 0.02*sin(uTime*0.13);
   float sc = uScale * breath;
-  float drift = uTime*0.03;
-  float n1 = uModes.x + 0.5*sin(drift) + uMid*1.1;
-  float m1 = uModes.y + 0.5*cos(drift*0.83);
-  float n2 = uModes.z + 0.4*sin(drift*1.31 + 1.7);
-  float m2 = uModes.w + 0.4*cos(drift*0.67 + 0.5);
+
+  float drift = uTime*0.05;
+  // MODE NUMBERS are driven by the frequency bands — this is the physics of
+  // cymatics: a different frequency makes a different nodal figure. As voices
+  // enter and leave (bass note, mid pad, high arp) each bends its own mode, so
+  // the whole pattern reorganises instead of merely zooming.
+  float n1 = uModes.x + uB0*3.2 + uB2*1.4 + uHarm*2.6 + 0.5*sin(drift);
+  float m1 = uModes.y + uB1*2.8 + uB3*1.8 + 0.5*cos(drift*0.8);
+  float n2 = uModes.z + uB2*2.6 + uB4*1.6 + 0.4*sin(drift*1.3 + 1.7);
+  float m2 = uModes.w + uB3*2.8 + uB4*2.2 + (1.0-uHarm)*2.2 + 0.4*cos(drift*0.7 + 0.5);
+
   vec2 pc = c * sc;
   float r = length(c); float a = atan(c.y, c.x);
-  vec2 pr = vec2(r*sc*2.0, a*uSectors);
+  float sect = uSectors + uB4*3.0;                 // treble grows petals
+  vec2 pr = vec2(r*sc*2.0, a*sect);
   vec2 p = mix(pc, pr, uPolar);
+
+  // domain warp bends the nodal lines — a base amount per place, more as the
+  // highs sparkle and on every onset, so new notes visibly ripple the surface
+  float wq = uWarp + uB4*0.35 + uPulse*0.55;
+  p += wq * vec2(sin(p.y*1.7 + uTime*0.6), cos(p.x*1.7 - uTime*0.5));
+
   float f = chladni(p, n1, m1);
-  f = mix(f, chladni(p*1.27, n2, m2), uMix2);
-  f += uTreble*0.22 * sin(p.x*8.0 + uTime*2.0) * cos(p.y*8.0 - uTime*1.7);
+  f = mix(f, chladni(p*1.27 + wq, n2, m2), clamp(uMix2 + uB3*0.3, 0.0, 0.95));
+  f += uB4*0.28 * sin(p.x*9.0 + uTime*2.0) * cos(p.y*9.0 - uTime*1.7);   // high shimmer
+  f += uPulse*0.6 * sin(r*20.0 - uTime*7.0) * exp(-r*1.6);               // onset ripple from the centre
+
   float d = abs(f);
   float w = fwidth(f)*1.3;
-  float lw = 0.016 + drive*0.022;
+  float lw = 0.014 + energy*0.02;
   float line = 1.0 - smoothstep(lw, lw + w + 0.004, d);
-  float halo = (1.0 - smoothstep(0.0, 0.55, d)) * (0.045 + drive*0.03);
-  float alpha = (line*(0.5 + 0.55*drive) + halo) * uInkA;
+  float halo = (1.0 - smoothstep(0.0, 0.55, d)) * (0.04 + energy*0.03);
+  float alpha = (line*(0.45 + 0.6*energy) + halo) * uInkA;
   gl_FragColor = vec4(uInk, clamp(alpha, 0.0, 1.0));
 }`;
 
@@ -1633,7 +1679,7 @@ function initCymatics() {
   const loc = cyGL.getAttribLocation(cyProg, "aPos");
   cyGL.enableVertexAttribArray(loc);
   cyGL.vertexAttribPointer(loc, 2, cyGL.FLOAT, false, 0, 0);
-  ["uRes","uTime","uLevel","uBass","uMid","uTreble","uInk","uInkA","uPolar","uOffset","uModes","uSectors","uScale","uSpin","uMix2"]
+  ["uRes","uTime","uLevel","uPulse","uB0","uB1","uB2","uB3","uB4","uInk","uInkA","uPolar","uOffset","uModes","uSectors","uScale","uSpin","uMix2","uWarp","uHarm"]
     .forEach((n) => cyU[n] = cyGL.getUniformLocation(cyProg, n));
   cyGL.enable(cyGL.BLEND);
   cyGL.blendFunc(cyGL.SRC_ALPHA, cyGL.ONE_MINUS_SRC_ALPHA);
@@ -1659,33 +1705,50 @@ function cymaticsFor(char) {
   if (roll < 0.42) polar = 0;                                   // square plate
   else if (roll < 0.82) polar = 1;                             // radial mandala
   else { polar = rng() < 0.5 ? 1 : 0; const ang = rng()*6.2832, rad = 0.12 + rng()*0.16; offX = Math.cos(ang)*rad; offY = Math.sin(ang)*rad; }  // off-centre
-  const regScale = { bass:2.6, low:3.2, mid:4.2, high:5.4, bright:6.6 }[(char.register && char.register.id) || "mid"] || 4.2;
-  const scale = regScale * (0.85 + rng()*0.4);                 // register → coarse vs fine figure
-  const md = () => 2 + Math.floor(rng()*8);                    // mode numbers 2–9
-  const sectors = 3 + Math.floor(rng()*7);                     // 3–9 petals when radial
-  const spin = (rng() < 0.5 ? -1 : 1) * (0.008 + rng()*0.05) * (char.tempo/90);
-  const mix2 = 0.2 + rng()*0.35;
-  return { polar, offX, offY, n1:md(), m1:md(), n2:md(), m2:md(), sectors, scale, spin, mix2 };
+  const regScale = { bass:2.4, low:3.0, mid:4.0, high:5.4, bright:6.8 }[(char.register && char.register.id) || "mid"] || 4.0;
+  const scale = regScale * (0.8 + rng()*0.5);                  // register → coarse vs fine figure
+  const md = () => 1 + Math.floor(rng()*8);                    // base mode numbers 1–8 (audio pushes them higher)
+  const sectors = 2 + Math.floor(rng()*8);                     // 2–9 petals when radial
+  const spin = (rng() < 0.5 ? -1 : 1) * (0.006 + rng()*0.06) * (char.tempo/90);
+  const mix2 = 0.15 + rng()*0.5;
+  const warp = rng()*rng()*0.4;                                // some plates flow, some stay crisp
+  return { polar, offX, offY, n1:md(), m1:md(), n2:md(), m2:md(), sectors, scale, spin, mix2, warp };
 }
 function applyCymatics(char) { if (char) Object.assign(cyTarget, cymaticsFor(char)); }
 
 function cyReadAudio() {
-  let level = 0, bass = 0, mid = 0, treble = 0;
-  if (cyAnalyser) {
-    const fft = cyAnalyser.getValue(), n = fft.length;
-    const band = (a, b) => { let s = 0, ct = 0; for (let i = a; i < b && i < n; i++) { s += Math.max(0, Math.min(1, (fft[i] + 100) / 70)); ct++; } return ct ? s / ct : 0; };
-    bass   = band(0, Math.max(1, Math.floor(n*0.12)));
-    mid    = band(Math.floor(n*0.12), Math.floor(n*0.45));
-    treble = band(Math.floor(n*0.45), n);
-    const wave = cyWave.getValue(); let sum = 0;
-    for (let i = 0; i < wave.length; i++) sum += wave[i]*wave[i];
-    level = Math.min(1, Math.sqrt(sum / wave.length) * 3.2);
+  if (!cyAnalyser) {   // no audio yet: ease everything back toward rest
+    cyAud.level *= 0.94; cyAud.pulse *= 0.9;
+    for (const k of CY_BK) cyAud[k] *= 0.95;
+    return;
   }
-  const s = 0.18;
-  cyAud.level  += (level  - cyAud.level)  * s;
-  cyAud.bass   += (bass   - cyAud.bass)   * s;
-  cyAud.mid    += (mid    - cyAud.mid)    * s;
-  cyAud.treble += (treble - cyAud.treble) * s;
+  const fft = cyAnalyser.getValue(), n = fft.length;
+  const norm = (x) => Math.max(0, Math.min(1, (x + 100) / 70));
+  const band = (a, b) => { let s = 0, ct = 0; for (let i = a; i < b && i < n; i++) { s += norm(fft[i]); ct++; } return ct ? s / ct : 0; };
+  // band edges as a fraction of Nyquist (~22kHz). Musical energy sits in the
+  // low few kHz, so the bands are packed there rather than spread to 22kHz:
+  // ~0-120Hz sub · 120-300 bass · 300-700 lo-mid · 700-1800 mid · 1800-6000 high
+  const bin = (f) => Math.min(n - 1, Math.floor(f * n));
+  const E = [0, 0.0055, 0.0140, 0.0320, 0.0820, 0.2700];
+  const raw = [];
+  for (let k = 0; k < 5; k++) raw.push(band(bin(E[k]), Math.max(bin(E[k]) + 1, bin(E[k + 1]))));
+  // envelope follower per band: fast attack, slow release, so a new note snaps
+  // its band up (reorganising the figure) then eases back down
+  let flux = 0;
+  for (let i = 0; i < 5; i++) {
+    const cur = cyAud[CY_BK[i]];
+    const rate = raw[i] > cur ? 0.5 : 0.06;
+    cyAud[CY_BK[i]] = cur + (raw[i] - cur) * rate;
+    flux += Math.max(0, raw[i] - cyPrev[i]);                    // positive spectral flux = an onset
+    cyPrev[i] = raw[i];
+  }
+  const wave = cyWave.getValue(); let sum = 0;
+  for (let i = 0; i < wave.length; i++) sum += wave[i] * wave[i];
+  const level = Math.min(1, Math.sqrt(sum / wave.length) * 3.2);
+  cyAud.level += (level - cyAud.level) * 0.2;
+  // onset pulse: jumps on any new energy, then decays fast so ripples stay
+  // distinct rather than smearing into a constant wobble
+  cyAud.pulse = Math.max(cyAud.pulse * 0.84, Math.min(1, flux * 2.4));
 }
 function cyFrame() {
   cyRAF = requestAnimationFrame(cyFrame);
@@ -1693,13 +1756,17 @@ function cyFrame() {
   const L = 0.035;                                             // travel = a slow dissolve between plates
   for (const k of CY_KEYS) cyState[k] += (cyTarget[k] - cyState[k]) * L;
   cyReadAudio();
+  cyAud.harm += (cyAud.harmT - cyAud.harm) * 0.06;             // ease to the new chord's orientation
   const t = (performance.now() - cyStart) / 1000;
   cyGL.uniform2f(cyU.uRes, cyCanvas.width, cyCanvas.height);
   cyGL.uniform1f(cyU.uTime, t);
   cyGL.uniform1f(cyU.uLevel, cyAud.level);
-  cyGL.uniform1f(cyU.uBass, cyAud.bass);
-  cyGL.uniform1f(cyU.uMid, cyAud.mid);
-  cyGL.uniform1f(cyU.uTreble, cyAud.treble);
+  cyGL.uniform1f(cyU.uPulse, cyAud.pulse);
+  cyGL.uniform1f(cyU.uB0, cyAud.b0);
+  cyGL.uniform1f(cyU.uB1, cyAud.b1);
+  cyGL.uniform1f(cyU.uB2, cyAud.b2);
+  cyGL.uniform1f(cyU.uB3, cyAud.b3);
+  cyGL.uniform1f(cyU.uB4, cyAud.b4);
   cyGL.uniform3f(cyU.uInk, cyState.inkR, cyState.inkG, cyState.inkB);
   cyGL.uniform1f(cyU.uInkA, cyState.inkA);
   cyGL.uniform1f(cyU.uPolar, cyState.polar);
@@ -1709,6 +1776,8 @@ function cyFrame() {
   cyGL.uniform1f(cyU.uScale, cyState.scale);
   cyGL.uniform1f(cyU.uSpin, cyState.spin);
   cyGL.uniform1f(cyU.uMix2, cyState.mix2);
+  cyGL.uniform1f(cyU.uWarp, cyState.warp);
+  cyGL.uniform1f(cyU.uHarm, cyAud.harm);
   cyGL.clear(cyGL.COLOR_BUFFER_BIT);
   cyGL.drawArrays(cyGL.TRIANGLES, 0, 3);
 }
