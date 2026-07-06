@@ -51,25 +51,18 @@
   #results button .sub { color: var(--faint); margin-left: 8px; }
   #msg { margin-top: 6px; min-height: 12px; }
 
-  /* centre — the visual */
-  .stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-  #circle { position: relative; width: min(230px, 62vw); height: min(230px, 62vw); background: transparent; border: none; cursor: pointer; }
-  #circle .ring {
-    position: absolute; border-radius: 50%; border: 1px solid var(--line);
-    opacity: 0.5; transition: opacity 1s;
+  /* the cymatics field — fills the screen, sits over the sky gradient, under the HUD */
+  #gl { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 0; display: block; }
+  /* one-time invitation; fades away for good after the first touch */
+  #hint {
+    position: fixed; left: 50%; bottom: max(56px, calc(env(safe-area-inset-bottom) + 44px));
+    transform: translateX(-50%); z-index: 6; color: var(--faint);
+    opacity: 0.6; transition: opacity 1.6s ease; pointer-events: none; white-space: nowrap;
   }
-  body.playing #circle .ring { opacity: 1; animation: breathe var(--dur, 9s) ease-in-out infinite; }
-  #dot {
-    position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px;
-    border-radius: 50%; background: var(--ink);
-  }
-  body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
-  #hint { color: var(--faint); }
+  #hint.gone { opacity: 0; }
 
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-  @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
-  @keyframes pulse { 0%,100% { transform: scale(1); } 12% { transform: scale(1.35); } }
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *:not(#gl) { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -83,13 +76,8 @@
   </div>
   <div class="corner tr"><div id="datetime" class="mono"></div></div>
 
-  <main class="stage">
-    <button id="circle" aria-label="Play or stop the sound">
-      <span id="rings"></span>
-      <span id="dot"></span>
-    </button>
-    <div id="hint" class="mono">tap to listen</div>
-  </main>
+  <canvas id="gl" aria-hidden="true"></canvas>
+  <div id="hint" class="mono">touch to begin</div>
 
   <div class="corner bl"><div id="weather" class="mono"></div></div>
   <div class="corner br"><div id="wind" class="mono"></div></div>
@@ -1227,6 +1215,10 @@ function applySky(hour) {
   rs.setProperty("--ink", darkInk ? "rgba(14,18,38,0.94)" : "rgba(236,238,250,0.94)");
   rs.setProperty("--faint", darkInk ? "rgba(14,18,38,0.58)" : "rgba(236,238,250,0.52)");
   rs.setProperty("--line", darkInk ? "rgba(14,18,38,0.24)" : "rgba(236,238,250,0.18)");
+
+  // the cymatics lines take the same ink so they stay legible against the sky
+  if (darkInk) { cyTarget.inkR = 0.05; cyTarget.inkG = 0.07; cyTarget.inkB = 0.15; cyTarget.inkA = 0.5; }
+  else         { cyTarget.inkR = 0.93; cyTarget.inkG = 0.94; cyTarget.inkB = 0.99; cyTarget.inkA = 0.62; }
 }
 
 function applyConditions() {
@@ -1312,19 +1304,8 @@ function setLocationName(name) {
 }
 
 function renderCharacter() {
-  const c = state.char;
   setLocationName(state.title);
-  const rings = $("rings");
-  rings.innerHTML = "";
-  for (let i = 0; i < c.voices; i++) {
-    const el = document.createElement("span");
-    el.className = "ring";
-    el.style.inset = (i * (115 / c.voices)) + "px";
-    el.style.setProperty("--dur", (7 + i * 3.3) + "s");
-    rings.appendChild(el);
-  }
-  document.documentElement.style.setProperty("--beat", (60 / c.tempo) + "s");
-  document.body.classList.toggle("grooving", c.rhythm > 0);
+  applyCymatics(state.char);   // the field takes on this place's plate
 }
 
 /* ================================================================== */
@@ -1386,39 +1367,44 @@ function stopAll(secs) {
   state.engine = null;
 }
 
-let toggling = false;   // re-entrancy guard: an await window must not start twice
-$("circle").addEventListener("click", async () => {
-  if (toggling) return;
-  toggling = true;
+/* No play button: the field is always alive. The first interaction anywhere
+   starts the audio (browsers require one user gesture), then it just plays on. */
+let audioStarted = false, audioStarting = false;
+function startEngine() {
+  stopAll(0.2);                         // clear any straggler before starting fresh
+  state.det = makeDetails(state.char);
+  const eng = buildEngine(applyPicks(state.char), state.det);
+  state.engine = eng;
+  registerEngine(eng);
+  eng.setMix(mix);
+  eng.master.gain.rampTo(0.95, 3.0);
+}
+async function ensureAudio() {
+  if (audioStarted || audioStarting) return;
+  audioStarting = true;
   try {
-    if (state.playing) {
-      state.playing = false;
-      document.body.classList.remove("playing");
-      $("hint").textContent = "tap to listen";
-      stopAll(1.4);
-      Tone.Transport.stop();          // halt every loop at once — nothing can keep firing
-      return;
-    }
     await Tone.start();
+    if (!cyAnalyser) {                  // tap the master output so the field can listen
+      cyAnalyser = new Tone.Analyser("fft", 64);
+      cyWave = new Tone.Analyser("waveform", 256);
+      Tone.getDestination().connect(cyAnalyser);
+      Tone.getDestination().connect(cyWave);
+    }
     Tone.Transport.bpm.value = state.char.tempo;
     if (Tone.Transport.state !== "started") Tone.Transport.start();
-    stopAll(0.2);                       // clear any straggler before starting fresh
-    state.det = makeDetails(state.char);
-    const eng = buildEngine(applyPicks(state.char), state.det);
-    state.engine = eng;
-    registerEngine(eng);
-    eng.setMix(mix);
-    eng.master.gain.rampTo(0.95, 1.2);
+    startEngine();
     state.playing = true;
-    document.body.classList.add("playing");
-    $("hint").textContent = "tap to stop";
+    audioStarted = true;
+    const h = $("hint"); if (h) h.classList.add("gone");
     applyConditions();
   } catch (err) {
     $("msg").textContent = "audio error: " + err.message;
   } finally {
-    toggling = false;
+    audioStarting = false;
   }
-});
+}
+["pointerdown", "keydown", "touchstart"].forEach((ev) =>
+  window.addEventListener(ev, ensureAudio, { passive: true }));
 
 function locate(silent) {
   if (!navigator.geolocation) { if (!silent) $("msg").textContent = "geolocation unavailable"; return; }
@@ -1472,8 +1458,166 @@ document.addEventListener("click", (e) => {
 
 
 /* ================================================================== */
+/* Cymatics — a Chladni field that moves to the music                  */
+/* ================================================================== */
+/* One full-screen fragment shader draws the nodal lines of a vibrating
+   plate. Every place gets its own plate — square or radial, its own
+   modes, spatial frequency (bass places broad & slow, bright places
+   fine filigree) and spin. Bass drives the plate harder, the slow
+   chords morph the modes, arps shimmer a fine ripple across the surface. */
+let cyGL = null, cyProg = null, cyCanvas = null, cyRAF = 0, cyStart = 0;
+let cyAnalyser = null, cyWave = null;
+const cyU = {};
+const cyState  = { polar:0, offX:0, offY:0, n1:5, m1:3, n2:4, m2:6, sectors:5, scale:4, spin:0.02, mix2:0.35, inkR:0.92, inkG:0.93, inkB:0.98, inkA:0.6 };
+const cyTarget = Object.assign({}, cyState);
+const cyAud    = { level:0, bass:0, mid:0, treble:0 };
+const CY_KEYS  = Object.keys(cyState);
+
+const CY_VERT = "attribute vec2 aPos; void main(){ gl_Position = vec4(aPos,0.0,1.0); }";
+const CY_FRAG = `#extension GL_OES_standard_derivatives : enable
+precision highp float;
+uniform vec2 uRes; uniform float uTime;
+uniform float uLevel, uBass, uMid, uTreble;
+uniform vec3 uInk; uniform float uInkA;
+uniform float uPolar; uniform vec2 uOffset;
+uniform vec4 uModes; uniform float uSectors, uScale, uSpin, uMix2;
+mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
+float chladni(vec2 p, float n, float m){ return cos(n*p.x)*cos(m*p.y) - cos(m*p.x)*cos(n*p.y); }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / min(uRes.x, uRes.y);
+  vec2 c = rot(uSpin*uTime) * (uv - uOffset);
+  float drive = clamp(uBass*0.7 + uLevel*1.6, 0.0, 1.0);   // how hard the plate is driven
+  float breath = 1.0 + uBass*0.16 + 0.03*sin(uTime*0.13);
+  float sc = uScale * breath;
+  float drift = uTime*0.03;
+  float n1 = uModes.x + 0.5*sin(drift) + uMid*1.1;
+  float m1 = uModes.y + 0.5*cos(drift*0.83);
+  float n2 = uModes.z + 0.4*sin(drift*1.31 + 1.7);
+  float m2 = uModes.w + 0.4*cos(drift*0.67 + 0.5);
+  vec2 pc = c * sc;
+  float r = length(c); float a = atan(c.y, c.x);
+  vec2 pr = vec2(r*sc*2.0, a*uSectors);
+  vec2 p = mix(pc, pr, uPolar);
+  float f = chladni(p, n1, m1);
+  f = mix(f, chladni(p*1.27, n2, m2), uMix2);
+  f += uTreble*0.22 * sin(p.x*8.0 + uTime*2.0) * cos(p.y*8.0 - uTime*1.7);
+  float d = abs(f);
+  float w = fwidth(f)*1.3;
+  float lw = 0.016 + drive*0.022;
+  float line = 1.0 - smoothstep(lw, lw + w + 0.004, d);
+  float halo = (1.0 - smoothstep(0.0, 0.55, d)) * (0.045 + drive*0.03);
+  float alpha = (line*(0.5 + 0.55*drive) + halo) * uInkA;
+  gl_FragColor = vec4(uInk, clamp(alpha, 0.0, 1.0));
+}`;
+
+function cyCompile(type, src) {
+  const s = cyGL.createShader(type); cyGL.shaderSource(s, src); cyGL.compileShader(s);
+  if (!cyGL.getShaderParameter(s, cyGL.COMPILE_STATUS)) { console.warn(cyGL.getShaderInfoLog(s)); return null; }
+  return s;
+}
+function initCymatics() {
+  cyCanvas = $("gl");
+  const opts = { alpha:true, premultipliedAlpha:false, antialias:true, powerPreference:"low-power" };
+  cyGL = cyCanvas.getContext("webgl", opts) || cyCanvas.getContext("experimental-webgl", opts);
+  if (!cyGL) { cyCanvas.style.display = "none"; return; }
+  cyGL.getExtension("OES_standard_derivatives");
+  const vs = cyCompile(cyGL.VERTEX_SHADER, CY_VERT);
+  const fs = cyCompile(cyGL.FRAGMENT_SHADER, CY_FRAG);
+  if (!vs || !fs) { cyCanvas.style.display = "none"; return; }
+  cyProg = cyGL.createProgram();
+  cyGL.attachShader(cyProg, vs); cyGL.attachShader(cyProg, fs); cyGL.linkProgram(cyProg);
+  if (!cyGL.getProgramParameter(cyProg, cyGL.LINK_STATUS)) { console.warn(cyGL.getProgramInfoLog(cyProg)); cyCanvas.style.display = "none"; return; }
+  cyGL.useProgram(cyProg);
+  const buf = cyGL.createBuffer();
+  cyGL.bindBuffer(cyGL.ARRAY_BUFFER, buf);
+  cyGL.bufferData(cyGL.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), cyGL.STATIC_DRAW);
+  const loc = cyGL.getAttribLocation(cyProg, "aPos");
+  cyGL.enableVertexAttribArray(loc);
+  cyGL.vertexAttribPointer(loc, 2, cyGL.FLOAT, false, 0, 0);
+  ["uRes","uTime","uLevel","uBass","uMid","uTreble","uInk","uInkA","uPolar","uOffset","uModes","uSectors","uScale","uSpin","uMix2"]
+    .forEach((n) => cyU[n] = cyGL.getUniformLocation(cyProg, n));
+  cyGL.enable(cyGL.BLEND);
+  cyGL.blendFunc(cyGL.SRC_ALPHA, cyGL.ONE_MINUS_SRC_ALPHA);
+  cyGL.clearColor(0, 0, 0, 0);
+  cyResize();
+  window.addEventListener("resize", cyResize);
+  cyStart = performance.now();
+  applyCymatics(state.char);
+  cyRAF = requestAnimationFrame(cyFrame);
+}
+function cyResize() {
+  if (!cyGL) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, matchMedia("(pointer:coarse)").matches ? 1.5 : 2);
+  const w = Math.round(cyCanvas.clientWidth * dpr), h = Math.round(cyCanvas.clientHeight * dpr);
+  if (cyCanvas.width !== w || cyCanvas.height !== h) { cyCanvas.width = w; cyCanvas.height = h; }
+  cyGL.viewport(0, 0, cyCanvas.width, cyCanvas.height);
+}
+/* A place's plate is CHARACTER tier — stable when you return, unique per cell. */
+function cymaticsFor(char) {
+  const rng = mulberry32(hashStr(char.key + "|cym"));
+  const roll = rng();
+  let polar = 0, offX = 0, offY = 0;
+  if (roll < 0.42) polar = 0;                                   // square plate
+  else if (roll < 0.82) polar = 1;                             // radial mandala
+  else { polar = rng() < 0.5 ? 1 : 0; const ang = rng()*6.2832, rad = 0.12 + rng()*0.16; offX = Math.cos(ang)*rad; offY = Math.sin(ang)*rad; }  // off-centre
+  const regScale = { bass:2.6, low:3.2, mid:4.2, high:5.4, bright:6.6 }[(char.register && char.register.id) || "mid"] || 4.2;
+  const scale = regScale * (0.85 + rng()*0.4);                 // register → coarse vs fine figure
+  const md = () => 2 + Math.floor(rng()*8);                    // mode numbers 2–9
+  const sectors = 3 + Math.floor(rng()*7);                     // 3–9 petals when radial
+  const spin = (rng() < 0.5 ? -1 : 1) * (0.008 + rng()*0.05) * (char.tempo/90);
+  const mix2 = 0.2 + rng()*0.35;
+  return { polar, offX, offY, n1:md(), m1:md(), n2:md(), m2:md(), sectors, scale, spin, mix2 };
+}
+function applyCymatics(char) { if (char) Object.assign(cyTarget, cymaticsFor(char)); }
+
+function cyReadAudio() {
+  let level = 0, bass = 0, mid = 0, treble = 0;
+  if (cyAnalyser) {
+    const fft = cyAnalyser.getValue(), n = fft.length;
+    const band = (a, b) => { let s = 0, ct = 0; for (let i = a; i < b && i < n; i++) { s += Math.max(0, Math.min(1, (fft[i] + 100) / 70)); ct++; } return ct ? s / ct : 0; };
+    bass   = band(0, Math.max(1, Math.floor(n*0.12)));
+    mid    = band(Math.floor(n*0.12), Math.floor(n*0.45));
+    treble = band(Math.floor(n*0.45), n);
+    const wave = cyWave.getValue(); let sum = 0;
+    for (let i = 0; i < wave.length; i++) sum += wave[i]*wave[i];
+    level = Math.min(1, Math.sqrt(sum / wave.length) * 3.2);
+  }
+  const s = 0.18;
+  cyAud.level  += (level  - cyAud.level)  * s;
+  cyAud.bass   += (bass   - cyAud.bass)   * s;
+  cyAud.mid    += (mid    - cyAud.mid)    * s;
+  cyAud.treble += (treble - cyAud.treble) * s;
+}
+function cyFrame() {
+  cyRAF = requestAnimationFrame(cyFrame);
+  if (document.hidden || !cyGL) return;
+  const L = 0.035;                                             // travel = a slow dissolve between plates
+  for (const k of CY_KEYS) cyState[k] += (cyTarget[k] - cyState[k]) * L;
+  cyReadAudio();
+  const t = (performance.now() - cyStart) / 1000;
+  cyGL.uniform2f(cyU.uRes, cyCanvas.width, cyCanvas.height);
+  cyGL.uniform1f(cyU.uTime, t);
+  cyGL.uniform1f(cyU.uLevel, cyAud.level);
+  cyGL.uniform1f(cyU.uBass, cyAud.bass);
+  cyGL.uniform1f(cyU.uMid, cyAud.mid);
+  cyGL.uniform1f(cyU.uTreble, cyAud.treble);
+  cyGL.uniform3f(cyU.uInk, cyState.inkR, cyState.inkG, cyState.inkB);
+  cyGL.uniform1f(cyU.uInkA, cyState.inkA);
+  cyGL.uniform1f(cyU.uPolar, cyState.polar);
+  cyGL.uniform2f(cyU.uOffset, cyState.offX, cyState.offY);
+  cyGL.uniform4f(cyU.uModes, cyState.n1, cyState.m1, cyState.n2, cyState.m2);
+  cyGL.uniform1f(cyU.uSectors, cyState.sectors);
+  cyGL.uniform1f(cyU.uScale, cyState.scale);
+  cyGL.uniform1f(cyU.uSpin, cyState.spin);
+  cyGL.uniform1f(cyU.uMix2, cyState.mix2);
+  cyGL.clear(cyGL.COLOR_BUFFER_BIT);
+  cyGL.drawArrays(cyGL.TRIANGLES, 0, 3);
+}
+
+/* ================================================================== */
 /* Boot                                                                */
 /* ================================================================== */
+initCymatics();
 renderCharacter();
 applyConditions();
 fetchWeather();
