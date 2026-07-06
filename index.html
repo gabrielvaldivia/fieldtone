@@ -22,50 +22,38 @@
     background-attachment: fixed;
     transition: background 2s ease;
     color: var(--ink);
-    font-family: 'Space Grotesk', sans-serif;
-    display: flex; flex-direction: column; align-items: center;
+    font-family: 'IBM Plex Mono', monospace;
+    display: grid; place-items: center;
     min-height: 100dvh;
-    padding: max(28px, env(safe-area-inset-top)) 20px max(18px, env(safe-area-inset-bottom));
+    padding: 0;
     -webkit-tap-highlight-color: transparent;
   }
-  .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.14em; text-transform: uppercase; }
-  /* top — the location name (search field) + locate, with the metadata beneath it */
-  .top { position: relative; width: min(560px, 100%); z-index: 5; text-align: center; }
-  #info { font-size: 9px; letter-spacing: 0.12em; color: var(--faint); min-height: 12px; margin-top: 12px; }
-  #msg { font-size: 9px; color: var(--faint); min-height: 12px; margin-top: 4px; }
-  .searchbar { position: relative; display: flex; align-items: center; border-bottom: 1px solid transparent; transition: border-color 0.4s; }
-  .searchbar:focus-within { border-bottom-color: var(--line); }
-  #q {
-    width: 100%; background: transparent; border: none;
-    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-weight: 300;
-    font-size: clamp(23px, 7vw, 34px); letter-spacing: 0.02em; text-align: center;
-    padding: 6px 46px; transition: opacity 1.2s;
-  }
+  /* one style everywhere: mono, all caps, one size */
+  .mono, #q, #locate, #results button { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+
+  /* four corners — a HUD */
+  .corner { position: fixed; z-index: 5; max-width: 46vw; line-height: 1.7; }
+  .tl { top: max(18px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left)); }
+  .tr { top: max(18px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right)); text-align: right; }
+  .bl { bottom: max(16px, env(safe-area-inset-bottom)); left: max(18px, env(safe-area-inset-left)); }
+  .br { bottom: max(16px, env(safe-area-inset-bottom)); right: max(18px, env(safe-area-inset-right)); text-align: right; }
+
+  .searchbar { position: relative; display: flex; align-items: baseline; gap: 8px; }
+  #q { width: min(48vw, 260px); background: transparent; border: none; padding: 0; color: var(--ink); transition: opacity 1.2s; }
   #q:focus-visible { outline: none; }
   #q.fading { opacity: 0.3; }
-  #q::placeholder { color: var(--ink); opacity: 0.32; font-weight: 300; }
-  #locate {
-    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-    background: transparent; border: 1px solid var(--line); border-radius: 999px;
-    color: var(--ink); font-size: 15px; cursor: pointer;
-  }
-  #results {
-    position: absolute; top: 100%; left: 0; right: 0; z-index: 5; margin-top: 8px;
-    background: var(--top); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
-    text-align: left; display: none;
-  }
+  #q::placeholder { color: var(--ink); opacity: 0.35; }
+  #locate { background: transparent; border: none; padding: 0; cursor: pointer; color: var(--ink); }
+  #results { position: absolute; top: 150%; left: 0; z-index: 6; min-width: 210px; background: var(--top); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; display: none; }
   #results.open { display: block; }
-  #results button {
-    display: block; width: 100%; text-align: left; background: transparent; border: none;
-    color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 15px; padding: 12px 14px; cursor: pointer;
-  }
-  #results button:hover, #results button:focus-visible { background: rgba(236,238,250,0.06); }
-  #results button .sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-left: 10px; }
+  #results button { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--ink); padding: 10px 12px; cursor: pointer; }
+  #results button:hover, #results button:focus-visible { background: rgba(236,238,250,0.07); }
+  #results button .sub { color: var(--faint); margin-left: 8px; }
+  #msg { margin-top: 6px; min-height: 12px; }
 
-  /* middle — the visual, centred in the space between the top and the mixer */
-  .stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  #circle { position: relative; width: min(230px, 62vw); height: min(230px, 62vw); margin: 0 0 12px; background: transparent; border: none; cursor: pointer; }
+  /* centre — the visual */
+  .stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #circle { position: relative; width: min(230px, 62vw); height: min(230px, 62vw); background: transparent; border: none; cursor: pointer; }
   #circle .ring {
     position: absolute; border-radius: 50%; border: 1px solid var(--line);
     opacity: 0.5; transition: opacity 1s;
@@ -76,7 +64,7 @@
     border-radius: 50%; background: var(--ink);
   }
   body.playing.grooving #dot { animation: pulse var(--beat, 1s) ease-out infinite; }
-  #hint { font-size: 9px; color: var(--faint); }
+  #hint { color: var(--faint); }
 
   button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.12); opacity: 0.95; } }
@@ -85,15 +73,15 @@
 </style>
 </head>
 <body>
-  <header class="top">
+  <div class="corner tl">
     <div class="searchbar">
-      <input id="q" autocomplete="off" spellcheck="false" placeholder="search any place…" aria-label="Current location — type to search any place on Earth">
+      <input id="q" class="mono" autocomplete="off" spellcheck="false" placeholder="search…" aria-label="Current location — type to search any place on Earth">
       <button id="locate" aria-label="Use my location">◎</button>
     </div>
     <div id="results" role="listbox"></div>
-    <div id="info" class="mono"></div>
     <div id="msg" class="mono"></div>
-  </header>
+  </div>
+  <div class="corner tr"><div id="datetime" class="mono"></div></div>
 
   <main class="stage">
     <button id="circle" aria-label="Play or stop the sound">
@@ -102,6 +90,9 @@
     </button>
     <div id="hint" class="mono">tap to listen</div>
   </main>
+
+  <div class="corner bl"><div id="weather" class="mono"></div></div>
+  <div class="corner br"><div id="wind" class="mono"></div></div>
 
 
 <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
@@ -1120,17 +1111,18 @@ function applyConditions() {
   renderInfo();
 }
 
-/* coordinates · time · weather, all on one line */
+/* corners: top-right = local date & time, bottom-left = weather, bottom-right = wind */
+const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 function renderInfo() {
-  const hour = localHour();
-  const hh = String(Math.floor(hour)).padStart(2, "0");
-  const mm = String(Math.floor((hour - Math.floor(hour)) * 60)).padStart(2, "0");
-  const cl = cellOf(state.center.lat, state.center.lng);
+  const off = state.tzOffsetSec != null ? state.tzOffsetSec : Math.round(state.center.lng / 15) * 3600;
+  const t = new Date(Date.now() + off * 1000);
+  const hh = String(t.getUTCHours()).padStart(2, "0");
+  const mm = String(t.getUTCMinutes()).padStart(2, "0");
+  const dd = String(t.getUTCDate()).padStart(2, "0");
+  $("datetime").textContent = `${dd} ${MON[t.getUTCMonth()]} ${t.getUTCFullYear()} · ${hh}:${mm}`;
   const w = state.weather;
-  let s = `${cl.lat.toFixed(3)}° ${cl.lng.toFixed(3)}° · ${hh}:${mm}`;
-  if (w.desc) s += ` · ${Math.round(w.temp)}°C · ${w.desc} · wind ${Math.round(w.windKmh || 0)} km/h`;
-  if (state.char && state.char.genre) s += ` · ${state.char.genre}`;
-  $("info").textContent = s;
+  $("weather").textContent = w.desc ? `${Math.round(w.temp)}°C · ${w.desc}` : "";
+  $("wind").textContent = w.desc ? `wind ${Math.round(w.windKmh || 0)} km/h` : "";
 }
 
 /* ================================================================== */
@@ -1335,7 +1327,7 @@ $("q").addEventListener("keydown", (e) => {
 // clicking a result must not blur-then-close before the click lands
 $("results").addEventListener("mousedown", (e) => e.preventDefault());
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".top")) $("results").classList.remove("open");
+  if (!e.target.closest(".tl")) $("results").classList.remove("open");
 });
 
 
