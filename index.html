@@ -1615,7 +1615,8 @@ float chladni(vec2 p, float n, float m){ return cos(n*p.x)*cos(m*p.y) - cos(m*p.
 void main(){
   vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / min(uRes.x, uRes.y);
   vec2 c = rot(uSpin*uTime) * (uv - uOffset);
-  float drive = clamp(uBass*0.7 + uLevel*1.6, 0.0, 1.0);   // how hard the plate is driven
+  float drive = clamp(uBass*0.7 + uLevel*1.6, 0.0, 1.0);   // how hard the plate is driven (line detail)
+  float vis = clamp(uLevel*2.4, 0.0, 1.0);                 // overall presence: silence → none, loud → full
   float breath = 1.0 + uBass*0.16 + 0.03*sin(uTime*0.13);
   float sc = uScale * breath;
   float drift = uTime*0.03;
@@ -1635,7 +1636,7 @@ void main(){
   float lw = 0.016 + drive*0.022;
   float line = 1.0 - smoothstep(lw, lw + w + 0.004, d);
   float halo = (1.0 - smoothstep(0.0, 0.55, d)) * (0.045 + drive*0.03);
-  float alpha = clamp((line*(0.5 + 0.55*drive) + halo) * uInkA, 0.0, 1.0);
+  float alpha = clamp((line + halo) * vis, 0.0, 1.0) * uInkA;   // no baseline — fully driven by loudness
   gl_FragColor = vec4(uInk * alpha, alpha);   // premultiplied output (kept for iOS transparency)
 }`;
 
