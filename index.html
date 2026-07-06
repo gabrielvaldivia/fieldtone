@@ -535,9 +535,22 @@ function leadPool(genre, G) {
   return G.leads.concat(extra);
 }
 
-/* One melodic voice: an instrument + a behaviour + its own params. */
-function makeMeloVoice(kindId, behavior, oct, level, rng) {
-  const v = { kindId, behavior, oct, level, pan: (rng() * 2 - 1) * 0.5 };
+/* Register bands — where the melody sits. Some places play down in bassline
+   territory, most in the current mid range, some sparkle up high. [lo, hi] are
+   the midi fold window. Mid is weighted (appears more than once). */
+const REGISTERS = [
+  { id: "bass",   lo: 28, hi: 50 },
+  { id: "low",    lo: 38, hi: 62 },
+  { id: "mid",    lo: 50, hi: 74 },
+  { id: "mid",    lo: 50, hi: 74 },
+  { id: "mid",    lo: 52, hi: 80 },
+  { id: "high",   lo: 60, hi: 86 },
+  { id: "bright", lo: 68, hi: 96 },
+];
+
+/* One melodic voice: an instrument + a behaviour + register window + params. */
+function makeMeloVoice(kindId, behavior, lo, hi, level, rng) {
+  const v = { kindId, behavior, lo, hi, level, pan: (rng() * 2 - 1) * 0.5 };
   if (behavior === "arp") {
     v.rate = ["16n", "8n", "8t", "16n", "8n", "4n"][Math.floor(rng() * 6)];   // gentle pulse
     v.dir = ["up", "down", "updown", "random"][Math.floor(rng() * 4)];
@@ -596,15 +609,17 @@ function makeCharacter(lat, lng) {
   const primaryId = rpick(pool);
   const behavior = rpick(behaviorPool(genre));
   const leadKind = LEAD_KINDS.find((k) => k.id === primaryId) || LEAD_KINDS[0];   // kept for compat
-  const leadOctBase = [0, 1, 1, 2, 2, 3][Math.floor(rng() * 6)];   // wide register per place
+  const register = REGISTERS[Math.floor(rng() * REGISTERS.length)];   // the place's register: bass ↔ bright
   const layers = 1 + Math.floor(srng() * srng() * 3);           // 1–3, mostly 1 (this visit's fullness)
-  const melo = [makeMeloVoice(primaryId, behavior, leadOctBase, 1, srng)];
+  const melo = [makeMeloVoice(primaryId, behavior, register.lo, register.hi, 1, srng)];
   const ACCOMP = ["sustained", "scatter", "fragments"];         // companions stay out of the way
   for (let i = 1; i < layers; i++) {
-    const id2 = spick(pool);
-    const beh2 = spick(ACCOMP);
-    const oct2 = Math.max(-1, Math.min(3, leadOctBase + [-1, 0, 1][Math.floor(srng() * 3)]));
-    melo.push(makeMeloVoice(id2, beh2, oct2, 0.55 + srng() * 0.25, srng));
+    const roll = srng();
+    let lo, hi, beh2;
+    if (roll < 0.42) { lo = Math.max(22, register.lo - 15); hi = register.lo + 5; beh2 = "sustained"; }       // a bassline underneath
+    else if (roll < 0.66) { lo = register.hi - 5; hi = Math.min(100, register.hi + 16); beh2 = spick(["scatter", "fragments"]); }  // sparkle above
+    else { lo = register.lo; hi = register.hi; beh2 = spick(ACCOMP); }                                        // same register
+    melo.push(makeMeloVoice(spick(pool), beh2, lo, hi, 0.55 + srng() * 0.25, srng));
   }
 
   // the "space" — the genre sets the room, from intimate to cathedral
@@ -675,7 +690,7 @@ function makeCharacter(lat, lng) {
     fatCount, fatSpread, voiceQ, fmHarm, fmIndex, fx, fxParams, drive,
     motion, activity, regSpread, octBase,
     arp, arpRate, arpLen, arpOct, arpWave, arpUp, bassWave,
-    seventh, progression, chordDwell, leadOctBase, padOct, melo, behavior,
+    seventh, progression, chordDwell, register, padOct, melo, behavior,
     leadVerbAmt, leadDelayTime, leadDelayFb, leadDelayWet, leadDry,
     kit, air, airHz };
 }
@@ -961,14 +976,16 @@ function buildEngine(char, det) {
       volume: -25,
     }).connect(leadGain));
 
-    // maps a chord-tone index (over a span of octaves) to a folded midi note
-    const toMidi = (pos, oct, lo, hi) => {
+    // maps a chord-tone index to a note folded into the voice's register window
+    const toMidi = (pos, lo, hi) => {
       const tones = harmony.tones, n = tones.length;
       const o = Math.floor(pos / n);
-      let midi = rootNow + tones[((pos % n) + n) % n] + 12 * (o + oct);
+      let midi = rootNow + tones[((pos % n) + n) % n] + 12 * o;
       while (midi > hi) midi -= 12; while (midi < lo) midi += 12;
       return midi;
     };
+    // the halo doubles a note an octave down — but skip it for low/bass voices
+    const haloNote = (midi, len, when, vel) => { if (midi >= 54) halo.triggerAttackRelease(Tone.Frequency(midi - 12, "midi"), len, when, vel); };
     // wind + daylight stir the voices awake; night and stillness thin them out
     const liven = () => 0.4 + params.density * 0.25 + params.wind * 0.25;
 
@@ -992,7 +1009,7 @@ function buildEngine(char, det) {
           else if (mv.dir === "down") pos = seqLen - 1 - (step % seqLen);
           else if (mv.dir === "updown") { const p = step % (2 * seqLen - 2 || 1); pos = p < seqLen ? p : 2 * seqLen - 2 - p; }
           else pos = Math.floor(Math.random() * seqLen);
-          const midi = toMidi(pos, mv.oct, 50, 92);
+          const midi = toMidi(pos, mv.lo, mv.hi);
           const dur = Tone.Time(mv.rate).toSeconds() * mv.gate;
           play(Tone.Frequency(midi, "midi"), dur, time, 0.5 + Math.random() * 0.3);
           step++;
@@ -1005,9 +1022,9 @@ function buildEngine(char, det) {
         const loop = new Tone.Loop((time) => {
           if (Math.random() > 0.5 + liven() * 0.4) return;
           deg += [-2, -1, 0, 1, 2][Math.floor(Math.random() * 5)];
-          const midi = toMidi(((deg % 3) + 3) % 3, mv.oct, 48, 82);
+          const midi = toMidi(((deg % 3) + 3) % 3, mv.lo, mv.hi);
           play(Tone.Frequency(midi, "midi"), mv.noteLen, time, 0.7);
-          halo.triggerAttackRelease(Tone.Frequency(Math.max(40, midi - 12), "midi"), mv.noteLen * 1.2, time + 0.08, 0.5);
+          haloNote(midi, mv.noteLen * 1.2, time + 0.08, 0.5);
         }, mv.interval);
         loop.start(Math.random() * mv.interval);
         loops.push(loop);
@@ -1017,7 +1034,7 @@ function buildEngine(char, det) {
           if (Math.random() > mv.prob * liven()) return;
           const span = mv.wide ? 3 : 2;
           const pos = Math.floor(Math.random() * harmony.tones.length * span);
-          const midi = toMidi(pos, mv.oct, 50, 90);
+          const midi = toMidi(pos, mv.lo, mv.hi);
           play(Tone.Frequency(midi, "midi"), mv.noteLen, time, 0.5 + Math.random() * 0.35);
         }, mv.interval);
         loop.start(Math.random() * mv.interval);
@@ -1030,10 +1047,10 @@ function buildEngine(char, det) {
             if (Math.random() > 0.35 + liven() * 0.55) return;
             const fig = ctl.figs[fi] ? ctl.figs[fi].figure : f.figure;
             fig.forEach((note) => {
-              const midi = toMidi(note.tone + note.oct * harmony.tones.length, mv.oct, 52, 86);
+              const midi = toMidi(note.tone + note.oct * harmony.tones.length, mv.lo, mv.hi);
               const when = time + note.at;
               play(Tone.Frequency(midi, "midi"), note.len, when, 0.6);
-              halo.triggerAttackRelease(Tone.Frequency(Math.max(40, midi - 12), "midi"), note.len * 1.4, when + 0.06, 0.55);
+              haloNote(midi, note.len * 1.4, when + 0.06, 0.55);
             });
           }, f.interval);
           loop.start(0.5 + Math.random() * 4);
