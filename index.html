@@ -513,10 +513,10 @@ const AMBIENTG = new Set(["ambient", "nordic", "drone", "gamelan", "indian", "cl
 const PLUCKYG  = new Set(["bluegrass", "celtic", "country", "flamenco", "mediterranean", "latin", "bossa", "andean", "afrobeat", "desertblues", "salsa", "tango"]);
 const ELECTROG = new Set(["cyberpunk", "techno", "house", "kpop", "dnb", "trap", "gfunk", "balkan", "footwork"]);
 function behaviorPool(genre) {
-  if (AMBIENTG.has(genre)) return ["sustained", "line", "sustained", "fragments", "line"];
-  if (ELECTROG.has(genre)) return ["arp", "line", "line", "arp", "fragments"];
-  if (PLUCKYG.has(genre))  return ["line", "fragments", "line", "arp", "sustained"];
-  return ["line", "line", "sustained", "fragments", "arp"];
+  if (AMBIENTG.has(genre)) return ["sustained", "sustained", "line", "fragments", "sustained"];
+  if (ELECTROG.has(genre)) return ["line", "sustained", "arp", "line", "fragments"];
+  if (PLUCKYG.has(genre))  return ["line", "sustained", "line", "fragments", "sustained"];
+  return ["line", "sustained", "line", "sustained", "fragments"];
 }
 function leadPool(genre, G) {
   const extra = AMBIENTG.has(genre) ? ["choir", "organ", "crystal", "vox", "glass"]
@@ -547,12 +547,12 @@ const REGISTERS = [
    scales note density; gaps = how often things fall silent; padReg = which
    register the pad occupies (hollow = bass + high, empty middle). */
 const FORMS = {
-  wash:        { id:"wash",        padMode:"prog", padLevel:1.0,  padReg:"mid",    droneMul:1.0,  meloLo:1, meloHi:3, meloLvl:1.0,  dry:0.30, space:0.35, dens:1.0,  gaps:0.10, airMul:1.0 },
-  drone:       { id:"drone",       padMode:"hold", padLevel:1.05, padReg:"low",    droneMul:1.5,  meloLo:0, meloHi:1, meloLvl:0.6,  dry:0.15, space:0.85, dens:0.5,  gaps:0.12, airMul:1.3 },
-  pointillist: { id:"pointillist", padMode:"none", padLevel:0.0,  padReg:"mid",    droneMul:0.2,  meloLo:1, meloHi:2, meloLvl:1.0,  dry:0.70, space:0.22, dens:0.32, gaps:0.65, airMul:0.7 },
-  melody:      { id:"melody",      padMode:"prog", padLevel:0.55, padReg:"mid",    droneMul:0.5,  meloLo:1, meloHi:1, meloLvl:1.35, dry:0.55, space:0.30, dens:1.1,  gaps:0.10, airMul:0.8 },
-  interlock:   { id:"interlock",   padMode:"thin", padLevel:0.35, padReg:"high",   droneMul:0.3,  meloLo:3, meloHi:4, meloLvl:0.9,  dry:0.45, space:0.40, dens:1.15, gaps:0.05, airMul:0.8 },
-  textural:    { id:"textural",    padMode:"hold", padLevel:0.5,  padReg:"hollow", droneMul:1.25, meloLo:0, meloHi:1, meloLvl:0.5,  dry:0.25, space:0.70, dens:0.4,  gaps:0.35, airMul:3.2 },
+  wash:        { id:"wash",        padMode:"prog", padLevel:1.0,  padReg:"mid",    droneMul:1.0,  meloLo:1, meloHi:3, meloLvl:0.78, dry:0.30, space:0.35, dens:1.0,  gaps:0.10, airMul:1.0 },
+  drone:       { id:"drone",       padMode:"hold", padLevel:1.05, padReg:"low",    droneMul:1.5,  meloLo:0, meloHi:1, meloLvl:0.5,  dry:0.15, space:0.85, dens:0.5,  gaps:0.12, airMul:1.3 },
+  pointillist: { id:"pointillist", padMode:"none", padLevel:0.0,  padReg:"mid",    droneMul:0.2,  meloLo:1, meloHi:2, meloLvl:0.9,  dry:0.70, space:0.22, dens:0.32, gaps:0.65, airMul:0.7 },
+  melody:      { id:"melody",      padMode:"prog", padLevel:0.6,  padReg:"mid",    droneMul:0.5,  meloLo:1, meloHi:1, meloLvl:1.0,  dry:0.55, space:0.30, dens:1.1,  gaps:0.10, airMul:0.8 },
+  interlock:   { id:"interlock",   padMode:"thin", padLevel:0.4,  padReg:"high",   droneMul:0.3,  meloLo:3, meloHi:4, meloLvl:0.72, dry:0.45, space:0.40, dens:1.15, gaps:0.05, airMul:0.8 },
+  textural:    { id:"textural",    padMode:"hold", padLevel:0.5,  padReg:"hollow", droneMul:1.25, meloLo:0, meloHi:1, meloLvl:0.45, dry:0.25, space:0.70, dens:0.4,  gaps:0.35, airMul:3.2 },
 };
 /* Which forms a genre draws from (weighted by repetition), with a few
    signature biases so certain regions have an unmistakable shape. */
@@ -720,7 +720,7 @@ function makeCharacter(lat, lng) {
   const leadDelayTime = 0.16 + rng() * 0.5;
   const leadDelayFb = 0.12 + rng() * 0.22;                          // shorter echo tail
   const leadDelayWet = (rng() * 0.06) * (1 - form.dry * 0.5);       // barely-there echo, often none
-  const leadDry = (0.07 + rng() * 0.1) * (1 + form.dry * 2.2);      // dry forms sit right up front
+  const leadDry = (0.04 + rng() * 0.07) * (1 + form.dry * 2.0);     // mostly wet — sits inside the space
 
   const air = (0.03 + rng() * 0.09) * form.airMul;           // textural places push the wind bed forward
   const airHz = 300 + rng() * 900;
@@ -1013,7 +1013,12 @@ function buildEngine(char, det) {
     const leadDry = track(new Tone.Gain(char.leadDry).connect(filter));
     const leadGain = track(new Tone.Gain(1));
     leadGainNode = leadGain;
-    leadGain.connect(leadDelay); leadGain.connect(leadVerb); leadGain.connect(leadDry);
+    // soften the melody so it blends with the pad instead of poking through:
+    // a lowpass rolls off the pointy highs, a gentle chorus smears it into a wash
+    const leadSoft = track(new Tone.Filter(2200, "lowpass"));
+    const leadChorus = track(new Tone.Chorus(0.5, 4, 0.55).start()); leadChorus.wet.value = 0.3;
+    leadGain.connect(leadSoft); leadSoft.connect(leadChorus);
+    leadChorus.connect(leadDelay); leadChorus.connect(leadVerb); leadChorus.connect(leadDry);
 
     // halo — a soft shadow voice that doubles slow notes an octave below so
     // each figure blooms out of the atmosphere like a layered patch, not a wave
@@ -1109,7 +1114,7 @@ function buildEngine(char, det) {
             const n = long ? 2 + Math.floor(Math.random() * 2) : mv.notes;
             let deg = nearChord(curDeg);
             for (let i = 0; i < n; i++) {
-              const durSet = long ? [3, 4, 5, 6] : [1, 1, 2, 2, 3];
+              const durSet = long ? [4, 5, 6, 8] : [2, 2, 3, 3, 4];   // longer notes → less choppy
               evs.push({ deg, dur: durSet[Math.floor(Math.random() * durSet.length)] });
               if (i === n - 2) deg = nearChord(deg + (Math.random() < 0.5 ? 1 : -1));         // approach the cadence
               else if (i < n - 1) { deg += Math.random() < 0.72 ? (Math.random() < 0.5 ? 1 : -1) : (Math.random() < 0.5 ? 2 : -2); if (Math.random() < 0.28) deg = nearChord(deg); }
@@ -1131,7 +1136,7 @@ function buildEngine(char, det) {
           const ev = phrase[pi++];
           const midi = degMidi(ev.deg, mv.lo, mv.hi, mv.behavior === "arp" ? null : prevMidi);
           prevMidi = midi;
-          const durSec = ev.dur * stepSec * 0.92;
+          const durSec = ev.dur * stepSec * 1.14;   // overlap into the next note → legato, not staccato
           play(Tone.Frequency(midi, "midi"), durSec, time, 0.48 + Math.random() * 0.24);
           if (mv.behavior === "sustained" || ev.dur >= 3) haloNote(midi, durSec * 1.2, time + 0.06, 0.5);
           hold = ev.dur - 1;
