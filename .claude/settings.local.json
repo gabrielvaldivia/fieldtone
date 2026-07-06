@@ -58,7 +58,20 @@
       "mcp__visualize__show_widget",
       "Bash(node -e \"const fs=require\\('fs'\\);const h=fs.readFileSync\\('index.html','utf8'\\);const m=[...h.matchAll\\(/<script>\\([\\\\s\\\\S]*?\\)<\\\\/script>/g\\)];let ok=true;m.forEach\\(\\(x,i\\)=>{try{new Function\\(x[1]\\);}catch\\(e\\){ok=false;console.log\\('ERR',e.message\\);}}\\);console.log\\(ok?'parse OK':'parse errors'\\);\")",
       "Bash(curl -s -o /dev/null -w '%{http_code}' https://fieldtone.vercel.app)",
-      "Bash(echo \"HTTP $\\(curl -s -o /dev/null -w '%{http_code}' https://fieldtone.vercel.app\\)\")"
+      "Bash(echo \"HTTP $\\(curl -s -o /dev/null -w '%{http_code}' https://fieldtone.vercel.app\\)\")",
+      "Bash(git revert *)",
+      "Bash(perl -0pi -e ' *)",
+      "Bash(echo \"=== scratchpad ===\"; ls -lat /private/tmp/claude-501/-Users-gabrielvaldivia-Documents-GitHub-fieldtone/*/scratchpad/ 2>/dev/null | head; echo \"=== recent images in common temp/paste dirs ===\"; find /private/tmp /tmp \"$HOME/.claude\" \"$HOME/Library/Caches\" -maxdepth 4 -type f \\\\\\( -iname \"*.png\" -o -iname \"*.jpg\" -o -iname \"*.jpeg\" -o -iname \"*.webp\" \\\\\\) -newermt \"-30 minutes\" 2>/dev/null | head -30; echo \"=== project images ===\"; ls -la /Users/gabrielvaldivia/Documents/GitHub/fieldtone/ | grep -iE \"\\\\.\\(png|jpg|jpeg|ico|svg|webp\\)\")",
+      "Bash(echo \"=== broad recent image search \\(last 60 min\\) ===\"; find /private/tmp /tmp \"$HOME/.claude\" \"$HOME/Library/Application Support\" -type f \\\\\\( -iname \"*.png\" -o -iname \"*.jpeg\" -o -iname \"*.jpg\" -o -iname \"*.webp\" \\\\\\) -newermt \"-60 minutes\" 2>/dev/null | grep -vi \"node_modules\\\\|cache/fontconfig\" | head -40; echo \"=== session/transcript dirs ===\"; find \"$HOME/.claude/projects/-Users-gabrielvaldivia-Documents-GitHub-fieldtone\" -newermt \"-60 minutes\" 2>/dev/null | head -20)",
+      "Bash(sips -g pixelWidth -g pixelHeight -g format /private/tmp/paste.webp)",
+      "Bash(sips -s format png /private/tmp/paste.webp --out /private/tmp/paste.png)",
+      "Bash(sips -Z 256 /private/tmp/paste.png --out /private/tmp/paste_preview.png)",
+      "Bash(sips -Z 32  /private/tmp/paste.png --out favicon-32.png)",
+      "Bash(sips -Z 180 /private/tmp/paste.png --out apple-touch-icon.png)",
+      "Bash(sips -Z 512 /private/tmp/paste.png --out favicon-512.png)",
+      "Bash(sips -Z 16  /private/tmp/paste.png --out favicon-16.png)",
+      "Bash(curl -s -o /dev/null -w '%{http_code} %{content_type}' https://fieldtone.vercel.app/favicon-32.png)",
+      "Bash(echo \"favicon: $\\(curl -s -o /dev/null -w '%{http_code} %{content_type}' https://fieldtone.vercel.app/favicon-32.png\\)\")"
     ]
   }
 }
